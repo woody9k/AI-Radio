@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Radio</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .status {
+            background-color: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .info {
+            background-color: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        .button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .button:hover {
+            background-color: #45a049;
+        }
+        .button:disabled {
+            background-color: #666;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>AI-Radio Backend Server</h1>
+            <p>RTL-SDR Interface with AI-Powered Anomaly Detection</p>
+        </div>
+        
+        <div class="status">
+            <h2>Server Status</h2>
+            <p>Backend server is running and ready to accept connections.</p>
+            <p>Frontend should be running on <a href="http://localhost:3000" style="color: #4CAF50;">http://localhost:3000</a></p>
+        </div>
+        
+        <div class="info">
+            <h2>API Endpoints</h2>
+            <ul>
+                <li><strong>GET /api/devices</strong> - List available RTL-SDR devices</li>
+                <li><strong>POST /api/devices/{id}/connect</strong> - Connect to device</li>
+                <li><strong>POST /api/devices/{id}/disconnect</strong> - Disconnect from device</li>
+                <li><strong>GET/POST /api/settings</strong> - Get/update SDR settings</li>
+                <li><strong>POST /api/stream/start</strong> - Start spectrum streaming</li>
+                <li><strong>POST /api/stream/stop</strong> - Stop spectrum streaming</li>
+                <li><strong>GET /api/spectrum</strong> - Get single spectrum reading</li>
+            </ul>
+            
+            <h2>WebSocket Events</h2>
+            <ul>
+                <li><strong>spectrum_data</strong> - Real-time spectrum data</li>
+                <li><strong>waterfall_data</strong> - Waterfall display data</li>
+                <li><strong>status</strong> - Connection status updates</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>
+
+
