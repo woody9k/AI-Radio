@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 
-const AIPanel = ({ detections, streaming }) => {
+const AIPanel = ({ detections, streaming, viewMode = 'beginner' }) => {
   const [anomalies, setAnomalies] = useState([])
   const [signalTypes, setSignalTypes] = useState([])
   const [aiEnabled, setAiEnabled] = useState(false)
@@ -41,6 +41,21 @@ const AIPanel = ({ detections, streaming }) => {
   }, [detections])
 
   const classifySignal = (signal) => {
+    // Use backend classification if available
+    if (signal.category && signal.description) {
+      return {
+        type: signal.description,
+        confidence: signal.confidence || 0.5,
+        description: viewMode === 'beginner' 
+          ? signal.description 
+          : `${signal.description} | ${signal.modulation || 'Unknown'} | ${formatFrequency(signal.frequency)} | BW: ${signal.bandwidth ? (signal.bandwidth/1000).toFixed(1) + 'kHz' : 'Unknown'} | SNR: ${signal.snr ? signal.snr.toFixed(1) + 'dB' : 'Unknown'}`,
+        category: signal.category,
+        modulation: signal.modulation,
+        technical: signal.technical_details
+      }
+    }
+
+    // Fallback to frontend classification
     const freq = signal.frequency
     const power = signal.power
     const bandwidth = signal.bandwidth || 0
@@ -48,45 +63,66 @@ const AIPanel = ({ detections, streaming }) => {
     // FM Broadcast (88-108 MHz)
     if (freq >= 88e6 && freq <= 108e6) {
       return {
-        type: 'FM Broadcast',
+        type: 'FM Broadcast Radio',
         confidence: 0.9,
-        description: 'Commercial FM radio station'
+        description: viewMode === 'beginner' 
+          ? 'Commercial FM radio station'
+          : `FM Broadcast | FM | ${formatFrequency(freq)} | BW: ${(bandwidth/1000).toFixed(1)}kHz | SNR: ${power.toFixed(1)}dB`
       }
     }
 
     // Aviation (118-137 MHz)
     if (freq >= 118e6 && freq <= 137e6) {
       return {
-        type: 'Aviation',
+        type: 'Aviation Communication',
         confidence: 0.8,
-        description: 'Aircraft communication'
+        description: viewMode === 'beginner' 
+          ? 'Aircraft communication'
+          : `Aviation | AM | ${formatFrequency(freq)} | BW: ${(bandwidth/1000).toFixed(1)}kHz | SNR: ${power.toFixed(1)}dB`
       }
     }
 
     // 2m Ham Radio (144-148 MHz)
     if (freq >= 144e6 && freq <= 148e6) {
       return {
-        type: '2m Ham',
+        type: '2m Ham Radio',
         confidence: 0.7,
-        description: 'Amateur radio 2m band'
+        description: viewMode === 'beginner' 
+          ? 'Amateur radio 2m band'
+          : `2m Ham | FM/SSB | ${formatFrequency(freq)} | BW: ${(bandwidth/1000).toFixed(1)}kHz | SNR: ${power.toFixed(1)}dB`
       }
     }
 
     // 70cm Ham Radio (430-450 MHz)
     if (freq >= 430e6 && freq <= 450e6) {
       return {
-        type: '70cm Ham',
+        type: '70cm Ham Radio',
         confidence: 0.7,
-        description: 'Amateur radio 70cm band'
+        description: viewMode === 'beginner' 
+          ? 'Amateur radio 70cm band'
+          : `70cm Ham | FM | ${formatFrequency(freq)} | BW: ${(bandwidth/1000).toFixed(1)}kHz | SNR: ${power.toFixed(1)}dB`
       }
     }
 
-    // Weather Satellites (137-138 MHz)
-    if (freq >= 137e6 && freq <= 138e6) {
+    // Weather Radio (162.4-162.55 MHz)
+    if (freq >= 162.4e6 && freq <= 162.55e6) {
       return {
-        type: 'Weather Satellite',
-        confidence: 0.6,
-        description: 'NOAA weather satellite'
+        type: 'NOAA Weather Radio',
+        confidence: 0.8,
+        description: viewMode === 'beginner' 
+          ? 'NOAA weather radio'
+          : `Weather | FM | ${formatFrequency(freq)} | BW: ${(bandwidth/1000).toFixed(1)}kHz | SNR: ${power.toFixed(1)}dB`
+      }
+    }
+
+    // CB Radio (26.965-27.405 MHz)
+    if (freq >= 26.965e6 && freq <= 27.405e6) {
+      return {
+        type: 'CB Radio',
+        confidence: 0.7,
+        description: viewMode === 'beginner' 
+          ? 'CB radio communication'
+          : `CB Radio | AM/SSB | ${formatFrequency(freq)} | BW: ${(bandwidth/1000).toFixed(1)}kHz | SNR: ${power.toFixed(1)}dB`
       }
     }
 
@@ -95,7 +131,9 @@ const AIPanel = ({ detections, streaming }) => {
       return {
         type: 'Digital Signal',
         confidence: 0.5,
-        description: 'Unknown digital transmission'
+        description: viewMode === 'beginner' 
+          ? 'Unknown digital transmission'
+          : `Digital | Unknown | ${formatFrequency(freq)} | BW: ${(bandwidth/1000).toFixed(1)}kHz | SNR: ${power.toFixed(1)}dB`
       }
     }
 
@@ -104,7 +142,9 @@ const AIPanel = ({ detections, streaming }) => {
       return {
         type: 'Narrowband Signal',
         confidence: 0.4,
-        description: 'Strong narrowband transmission'
+        description: viewMode === 'beginner' 
+          ? 'Strong narrowband transmission'
+          : `Narrowband | Unknown | ${formatFrequency(freq)} | BW: ${(bandwidth/1000).toFixed(1)}kHz | SNR: ${power.toFixed(1)}dB`
       }
     }
 

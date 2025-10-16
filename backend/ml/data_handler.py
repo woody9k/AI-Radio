@@ -33,6 +33,8 @@ class SignalSample:
     signals_detected: List[Dict[str, Any]]
     label: Optional[str] = None
     confidence: Optional[float] = None
+    category: Optional[str] = None  # 'aviation', 'fm_radio', etc.
+    modulation: Optional[str] = None  # 'AM', 'FM', 'SSB'
 
 
 @dataclass
@@ -170,15 +172,16 @@ class FeatureExtractor:
         """Extract statistical features."""
         features = {}
         
-        # Kurtosis and skewness
-        features['kurtosis'] = float(self._kurtosis(samples))
-        features['skewness'] = float(self._skewness(samples))
+        # Kurtosis and skewness (use magnitude to avoid complex warnings)
+        magnitude = np.abs(samples)
+        features['kurtosis'] = float(self._kurtosis(magnitude))
+        features['skewness'] = float(self._skewness(magnitude))
         
         # Peak-to-average ratio
-        features['peak_to_avg_ratio'] = float(np.max(np.abs(samples)) / (np.mean(np.abs(samples)) + 1e-12))
+        features['peak_to_avg_ratio'] = float(np.max(magnitude) / (np.mean(magnitude) + 1e-12))
         
         # Crest factor
-        features['crest_factor'] = float(np.max(np.abs(samples)) / (np.sqrt(np.mean(samples**2)) + 1e-12))
+        features['crest_factor'] = float(np.max(magnitude) / (np.sqrt(np.mean(magnitude**2)) + 1e-12))
         
         return features
     
@@ -384,8 +387,13 @@ class DataCollector:
                 for sample in self.samples_buffer:
                     sample_dict = asdict(sample)
                     # Convert numpy arrays to lists for JSON serialization
-                    sample_dict['samples'] = sample.samples.tolist()
+                    # Handle complex IQ samples by storing magnitude only for efficiency
+                    sample_dict['samples_magnitude'] = np.abs(sample.samples).tolist()
                     sample_dict['spectrum'] = sample.spectrum.tolist()
+                    
+                    # Remove the original samples field to avoid serialization issues
+                    if 'samples' in sample_dict:
+                        del sample_dict['samples']
                     samples_data.append(sample_dict)
             
             data = {

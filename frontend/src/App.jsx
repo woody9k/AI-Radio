@@ -16,6 +16,7 @@ function App() {
   const [waterfallData, setWaterfallData] = useState(null)
   const [deviceInfo, setDeviceInfo] = useState(null)
   const [aiDetections, setAiDetections] = useState([])
+  const [viewMode, setViewMode] = useState('beginner') // 'beginner' or 'advanced'
 
   useEffect(() => {
     // Initialize WebSocket connection
@@ -196,9 +197,24 @@ function App() {
         </div>
 
         <div className="right-panel">
+          <div className="view-toggle">
+            <button 
+              className={viewMode === 'beginner' ? 'active' : ''}
+              onClick={() => setViewMode('beginner')}
+            >
+              Beginner
+            </button>
+            <button 
+              className={viewMode === 'advanced' ? 'active' : ''}
+              onClick={() => setViewMode('advanced')}
+            >
+              Advanced
+            </button>
+          </div>
           <AIPanel
             detections={aiDetections}
             streaming={streaming}
+            viewMode={viewMode}
           />
         </div>
       </div>

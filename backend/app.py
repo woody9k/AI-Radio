@@ -22,6 +22,7 @@ from sdr_interface import sdr_manager, SDRDevice
 from signal_processor import SignalProcessor, WaterfallProcessor
 from presets import preset_manager, Preset
 from ml.data_handler import data_collector
+from ml.signal_classifier import signal_classifier
 from dataclasses import asdict
 
 # Configure logging
@@ -253,6 +254,31 @@ def get_spectrum():
         # Detect signals
         signals = signal_processor.detect_signals(spectrum, current_device.frequency)
         
+        # Extract features for classification
+        features = signal_processor.extract_features(samples)
+        
+        # Classify each detected signal
+        for signal in signals:
+            try:
+                classification = signal_classifier.classify_signal(
+                    frequency=signal['frequency'],
+                    features=features,
+                    spectrum=spectrum,
+                    signal_info=signal
+                )
+                signal['category'] = classification.category
+                signal['confidence'] = classification.confidence
+                signal['modulation'] = classification.modulation
+                signal['description'] = classification.description
+                signal['technical_details'] = classification.technical_details
+            except Exception as e:
+                logger.error(f"Error classifying signal in spectrum endpoint: {e}")
+                signal['category'] = 'unknown'
+                signal['confidence'] = 0.0
+                signal['modulation'] = 'Unknown'
+                signal['description'] = 'Unknown Signal'
+                signal['technical_details'] = {}
+        
         return jsonify({
             'success': True,
             'frequencies': freqs.tolist(),
@@ -450,6 +476,63 @@ def create_dataset():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/classifications', methods=['GET'])
+def get_classifications():
+    """Get recent signal classifications."""
+    try:
+        stats = signal_classifier.get_classification_stats()
+        return jsonify({
+            'success': True,
+            'stats': stats
+        })
+    except Exception as e:
+        logger.error(f"Error getting classifications: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/classifications/stats', methods=['GET'])
+def get_classification_stats():
+    """Get detailed classification statistics."""
+    try:
+        stats = signal_classifier.get_classification_stats()
+        categories = signal_classifier.get_available_categories()
+        
+        return jsonify({
+            'success': True,
+            'stats': stats,
+            'available_categories': categories
+        })
+    except Exception as e:
+        logger.error(f"Error getting classification stats: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/classifications/label', methods=['POST'])
+def label_signal():
+    """Manually label a signal for training."""
+    try:
+        data = request.get_json()
+        frequency = data.get('frequency')
+        category = data.get('category')
+        modulation = data.get('modulation')
+        
+        if not frequency or not category:
+            return jsonify({'success': False, 'error': 'Frequency and category required'}), 400
+        
+        # Store manual label for future training
+        # This would integrate with the data collection system
+        logger.info(f"Manual label: {frequency} Hz -> {category} ({modulation})")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Labeled {frequency} Hz as {category}'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error labeling signal: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 # WebSocket Events
 @socketio.on('connect')
 def handle_connect():
@@ -506,6 +589,29 @@ def streaming_worker():
             # Extract features for AI processing
             features = signal_processor.extract_features(samples)
             
+            # Classify each detected signal
+            for signal in signals:
+                try:
+                    classification = signal_classifier.classify_signal(
+                        frequency=signal['frequency'],
+                        features=features,
+                        spectrum=spectrum,
+                        signal_info=signal
+                    )
+                    signal['category'] = classification.category
+                    signal['confidence'] = classification.confidence
+                    signal['modulation'] = classification.modulation
+                    signal['description'] = classification.description
+                    signal['technical_details'] = classification.technical_details
+                    logger.info(f"Classified signal at {signal['frequency']/1e6:.3f} MHz as {classification.category} (confidence: {classification.confidence:.2f})")
+                except Exception as e:
+                    logger.error(f"Error classifying signal: {e}")
+                    signal['category'] = 'unknown'
+                    signal['confidence'] = 0.0
+                    signal['modulation'] = 'Unknown'
+                    signal['description'] = 'Unknown Signal'
+                    signal['technical_details'] = {}
+            
             # Collect data for ML training
             data_collector.add_sample(
                 samples=samples,
@@ -515,6 +621,10 @@ def streaming_worker():
                 gain=current_device.gain,
                 signals_detected=signals
             )
+            
+            # Debug: Check if signals have classification
+            classified_count = sum(1 for s in signals if 'category' in s)
+            logger.info(f"Emitting {len(signals)} signals, {classified_count} with classification")
             
             # Emit spectrum data
             socketio.emit('spectrum_data', {
