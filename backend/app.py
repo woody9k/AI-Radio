@@ -56,6 +56,18 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Health check endpoint."""
+    global current_device, streaming_active
+    return jsonify({
+        'success': True,
+        'device_connected': current_device is not None and current_device.is_connected if current_device else False,
+        'streaming': streaming_active,
+        'timestamp': datetime.now().isoformat()
+    })
+
+
 @app.route('/api/devices', methods=['GET'])
 def get_devices():
     """Get list of available RTL-SDR devices."""
@@ -726,14 +738,38 @@ def streaming_worker():
     global current_device, streaming_active, signal_processor, waterfall_processor
     
     logger.info("Starting streaming worker")
+    consecutive_errors = 0
+    max_consecutive_errors = 10
     
-    while streaming_active and current_device and current_device.is_connected:
+    while streaming_active:
         try:
+            # Check device health
+            if not current_device or not current_device.is_connected:
+                logger.warning("Device disconnected during streaming")
+                socketio.emit('device_error', {
+                    'error': 'Device disconnected',
+                    'timestamp': datetime.now().isoformat()
+                })
+                streaming_active = False
+                break
+            
             # Read samples
             samples = current_device.read_samples(signal_processor.fft_size)
             if samples is None:
+                consecutive_errors += 1
+                if consecutive_errors >= max_consecutive_errors:
+                    logger.error(f"Too many consecutive read failures ({consecutive_errors}), stopping stream")
+                    socketio.emit('device_error', {
+                        'error': 'Device read failures',
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    streaming_active = False
+                    break
                 time.sleep(0.1)
                 continue
+            
+            # Reset error counter on successful read
+            consecutive_errors = 0
             
             # Process spectrum
             freqs, spectrum = signal_processor.compute_fft(samples)
@@ -747,8 +783,8 @@ def streaming_worker():
             # Extract features for AI processing
             features = signal_processor.extract_features(samples)
             
-            # Classify each detected signal
-            for signal in signals:
+            # Classify each detected signal (limit to first 10 to prevent slowdown)
+            for signal in signals[:10]:
                 try:
                     classification = signal_classifier.classify_signal(
                         frequency=signal['frequency'],
@@ -761,7 +797,6 @@ def streaming_worker():
                     signal['modulation'] = classification.modulation
                     signal['description'] = classification.description
                     signal['technical_details'] = classification.technical_details
-                    logger.info(f"Classified signal at {signal['frequency']/1e6:.3f} MHz as {classification.category} (confidence: {classification.confidence:.2f})")
                 except Exception as e:
                     logger.error(f"Error classifying signal: {e}")
                     signal['category'] = 'unknown'
@@ -770,19 +805,19 @@ def streaming_worker():
                     signal['description'] = 'Unknown Signal'
                     signal['technical_details'] = {}
             
-            # Collect data for ML training
-            data_collector.add_sample(
-                samples=samples,
-                spectrum=spectrum,
-                frequency=current_device.frequency,
-                sample_rate=current_device.sample_rate,
-                gain=current_device.gain,
-                signals_detected=signals
-            )
-            
-            # Debug: Check if signals have classification
-            classified_count = sum(1 for s in signals if 'category' in s)
-            logger.info(f"Emitting {len(signals)} signals, {classified_count} with classification")
+            # Collect data for ML training (sample 10% to reduce overhead)
+            if np.random.rand() < 0.1:
+                try:
+                    data_collector.add_sample(
+                        samples=samples,
+                        spectrum=spectrum,
+                        frequency=current_device.frequency,
+                        sample_rate=current_device.sample_rate,
+                        gain=current_device.gain,
+                        signals_detected=signals
+                    )
+                except Exception as e:
+                    logger.error(f"Error collecting data: {e}")
             
             # Emit spectrum data
             socketio.emit('spectrum_data', {
@@ -805,7 +840,16 @@ def streaming_worker():
             time.sleep(0.1)
             
         except Exception as e:
-            logger.error(f"Error in streaming worker: {e}")
+            logger.error(f"Error in streaming worker: {e}", exc_info=True)
+            consecutive_errors += 1
+            if consecutive_errors >= max_consecutive_errors:
+                logger.error("Too many consecutive errors, stopping stream")
+                socketio.emit('device_error', {
+                    'error': str(e),
+                    'timestamp': datetime.now().isoformat()
+                })
+                streaming_active = False
+                break
             time.sleep(0.1)
     
     logger.info("Streaming worker stopped")

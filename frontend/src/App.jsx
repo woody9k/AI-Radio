@@ -60,10 +60,47 @@ function App() {
       console.log('Status:', data.message)
     })
 
+    newSocket.on('device_error', (data) => {
+      console.error('Device error:', data.error)
+      setDeviceConnected(false)
+      setStreaming(false)
+      alert(`Device error: ${data.error}. Please reconnect the device.`)
+    })
+
+    newSocket.on('disconnect', () => {
+      console.log('Disconnected from server')
+      setDeviceConnected(false)
+      setStreaming(false)
+    })
+
     setSocket(newSocket)
+
+    // Health check every 5 seconds to detect backend restart
+    const healthCheckInterval = setInterval(async () => {
+      try {
+        const response = await fetch('/api/health')
+        const data = await response.json()
+        if (data.success) {
+          // If backend says device is connected but frontend thinks it's not, refresh
+          if (data.device_connected && !deviceConnected) {
+            console.log('Backend has device but frontend does not - fetching devices')
+            fetchDevices()
+          }
+          // If backend says not connected but frontend thinks it is, update
+          if (!data.device_connected && deviceConnected) {
+            console.log('Backend lost device - updating frontend state')
+            setDeviceConnected(false)
+            setStreaming(false)
+          }
+        }
+      } catch (error) {
+        console.error('Health check failed:', error)
+      }
+    }, 5000)
 
     return () => {
       newSocket.close()
+      clearInterval(healthCheckInterval)
     }
   }, [])
 
