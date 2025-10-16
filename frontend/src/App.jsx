@@ -6,6 +6,7 @@ import DeviceStatus from './components/DeviceStatus'
 import AIPanel from './components/AIPanel'
 import Presets from './components/Presets'
 import AudioPlayer from './components/AudioPlayer'
+import SMeter from './components/SMeter'
 import './App.css'
 
 function App() {
@@ -236,6 +237,7 @@ function App() {
             streaming={streaming}
             onTuneToFrequency={tuneToFrequency}
           />
+          <SMeter spectrumData={spectrumData} />
         </div>
 
         <div className="right-panel">
