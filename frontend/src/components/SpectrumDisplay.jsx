@@ -26,6 +26,8 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
   }, [])
 
   const formatFrequency = (freq) => {
+    if (!freq && freq !== 0) return 'N/A'
+    
     if (freq >= 1e9) {
       return `${(freq / 1e9).toFixed(3)} GHz`
     } else if (freq >= 1e6) {
@@ -215,16 +217,20 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       }
       
       // Draw frequency scale
-      ctx.fillStyle = '#999'
-      ctx.font = '12px Arial'
-      const numLabels = 5
-      for (let i = 0; i <= numLabels; i++) {
-        const x = (i / numLabels) * width
-        const freqIndex = Math.floor((i / numLabels) * frequencies.length)
-        const freq = frequencies[freqIndex]
-        const label = formatFrequency(freq)
-        const labelWidth = ctx.measureText(label).width
-        ctx.fillText(label, x - labelWidth / 2, height - 5)
+      if (frequencies && frequencies.length > 0) {
+        ctx.fillStyle = '#999'
+        ctx.font = '12px Arial'
+        const numLabels = 5
+        for (let i = 0; i <= numLabels; i++) {
+          const x = (i / numLabels) * width
+          const freqIndex = Math.floor((i / numLabels) * frequencies.length)
+          if (freqIndex < frequencies.length) {
+            const freq = frequencies[freqIndex]
+            const label = formatFrequency(freq)
+            const labelWidth = ctx.measureText(label).width
+            ctx.fillText(label, x - labelWidth / 2, height - 5)
+          }
+        }
       }
     }
 
