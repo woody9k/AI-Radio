@@ -181,11 +181,11 @@ class SignalProcessor:
             
             # Get signal properties
             signal_info = {
-                'frequency': freq,
-                'power': spectrum[peak_idx],
-                'bin_index': peak_idx,
-                'bandwidth': self._estimate_bandwidth(spectrum, peak_idx),
-                'snr': self._estimate_snr(spectrum, peak_idx)
+                'frequency': float(freq),
+                'power': float(spectrum[peak_idx]),
+                'bin_index': int(peak_idx),
+                'bandwidth': float(self._estimate_bandwidth(spectrum, peak_idx)),
+                'snr': float(self._estimate_snr(spectrum, peak_idx))
             }
             
             signals.append(signal_info)
@@ -281,22 +281,22 @@ class SignalProcessor:
         features = {}
         
         # Time domain features
-        features['mean'] = np.mean(np.abs(samples))
-        features['std'] = np.std(samples)
-        features['rms'] = np.sqrt(np.mean(np.abs(samples)**2))
-        features['peak'] = np.max(np.abs(samples))
-        features['crest_factor'] = features['peak'] / features['rms'] if features['rms'] > 0 else 0
+        features['mean'] = float(np.mean(np.abs(samples)))
+        features['std'] = float(np.std(samples))
+        features['rms'] = float(np.sqrt(np.mean(np.abs(samples)**2)))
+        features['peak'] = float(np.max(np.abs(samples)))
+        features['crest_factor'] = float(features['peak'] / features['rms'] if features['rms'] > 0 else 0)
         
         # Spectral features
         freqs, spectrum = self.compute_fft(samples)
-        features['spectral_centroid'] = np.sum(freqs * np.abs(spectrum)) / np.sum(np.abs(spectrum))
-        features['spectral_bandwidth'] = np.sqrt(np.sum(((freqs - features['spectral_centroid'])**2) * np.abs(spectrum)) / np.sum(np.abs(spectrum)))
+        features['spectral_centroid'] = float(np.sum(freqs * np.abs(spectrum)) / np.sum(np.abs(spectrum)))
+        features['spectral_bandwidth'] = float(np.sqrt(np.sum(((freqs - features['spectral_centroid'])**2) * np.abs(spectrum)) / np.sum(np.abs(spectrum))))
         
         # Power features
-        total_power = np.sum(np.abs(spectrum)**2)
+        total_power = float(np.sum(np.abs(spectrum)**2))
         features['total_power'] = total_power
-        features['peak_power'] = np.max(np.abs(spectrum)**2)
-        features['power_ratio'] = features['peak_power'] / total_power if total_power > 0 else 0
+        features['peak_power'] = float(np.max(np.abs(spectrum)**2))
+        features['power_ratio'] = float(features['peak_power'] / total_power if total_power > 0 else 0)
         
         return features
     

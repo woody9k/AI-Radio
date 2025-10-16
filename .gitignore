@@ -44,6 +44,12 @@ data/*.wav
 ml-models/*.h5
 ml-models/*.pkl
 
+# Backend runtime data (samples/datasets)
+backend/data/
+backend/data/**
+data/samples/
+data/datasets/
+
 # IDE
 .vscode/
 .idea/

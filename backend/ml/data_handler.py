@@ -15,6 +15,7 @@ from collections import deque
 import threading
 import time
 from dataclasses import dataclass, asdict
+from scipy.fft import dct
 
 logger = logging.getLogger(__name__)
 
@@ -82,17 +83,17 @@ class FeatureExtractor:
         features = {}
         
         # Basic statistics
-        features['mean_power'] = np.mean(np.abs(samples)**2)
-        features['std_power'] = np.std(np.abs(samples)**2)
-        features['max_power'] = np.max(np.abs(samples)**2)
-        features['min_power'] = np.min(np.abs(samples)**2)
+        features['mean_power'] = float(np.mean(np.abs(samples)**2))
+        features['std_power'] = float(np.std(np.abs(samples)**2))
+        features['max_power'] = float(np.max(np.abs(samples)**2))
+        features['min_power'] = float(np.min(np.abs(samples)**2))
         
         # RMS energy
-        features['rms_energy'] = np.sqrt(np.mean(np.abs(samples)**2))
+        features['rms_energy'] = float(np.sqrt(np.mean(np.abs(samples)**2)))
         
         # Zero crossing rate
         zero_crossings = np.sum(np.diff(np.sign(samples)) != 0)
-        features['zero_crossing_rate'] = zero_crossings / len(samples)
+        features['zero_crossing_rate'] = float(zero_crossings / len(samples))
         
         return features
     
@@ -106,26 +107,26 @@ class FeatureExtractor:
         freqs = np.linspace(0, sample_rate/2, len(power_spectrum))
         
         # Spectral centroid
-        features['spectral_centroid'] = np.sum(freqs * power_spectrum) / np.sum(power_spectrum)
+        features['spectral_centroid'] = float(np.sum(freqs * power_spectrum) / np.sum(power_spectrum))
         
         # Spectral bandwidth
         centroid = features['spectral_centroid']
-        features['spectral_bandwidth'] = np.sqrt(
+        features['spectral_bandwidth'] = float(np.sqrt(
             np.sum(((freqs - centroid)**2) * power_spectrum) / np.sum(power_spectrum)
-        )
+        ))
         
         # Spectral rolloff (95% of energy)
         cumsum = np.cumsum(power_spectrum)
         rolloff_idx = np.where(cumsum >= 0.95 * cumsum[-1])[0]
         if len(rolloff_idx) > 0:
-            features['spectral_rolloff'] = freqs[rolloff_idx[0]]
+            features['spectral_rolloff'] = float(freqs[rolloff_idx[0]])
         else:
-            features['spectral_rolloff'] = freqs[-1]
+            features['spectral_rolloff'] = float(freqs[-1])
         
         # Spectral flatness
         geometric_mean = np.exp(np.mean(np.log(power_spectrum + 1e-12)))
         arithmetic_mean = np.mean(power_spectrum)
-        features['spectral_flatness'] = geometric_mean / (arithmetic_mean + 1e-12)
+        features['spectral_flatness'] = float(geometric_mean / (arithmetic_mean + 1e-12))
         
         return features
     
@@ -142,25 +143,25 @@ class FeatureExtractor:
         log_mel_spectrum = np.log(mel_spectrum + 1e-12)
         
         # DCT to get MFCCs
-        mfccs = np.fft.dct(log_mel_spectrum, norm='ortho')
-        features['mfcc_1'] = mfccs[1] if len(mfccs) > 1 else 0
-        features['mfcc_2'] = mfccs[2] if len(mfccs) > 2 else 0
-        features['mfcc_3'] = mfccs[3] if len(mfccs) > 3 else 0
+        mfccs = dct(log_mel_spectrum, norm='ortho')
+        features['mfcc_1'] = float(mfccs[1] if len(mfccs) > 1 else 0)
+        features['mfcc_2'] = float(mfccs[2] if len(mfccs) > 2 else 0)
+        features['mfcc_3'] = float(mfccs[3] if len(mfccs) > 3 else 0)
         
         # Chroma features (simplified)
         chroma = self._extract_chroma_features(power_spectrum)
-        features['chroma_1'] = chroma[0] if len(chroma) > 0 else 0
-        features['chroma_2'] = chroma[1] if len(chroma) > 1 else 0
-        features['chroma_3'] = chroma[2] if len(chroma) > 2 else 0
-        features['chroma_4'] = chroma[3] if len(chroma) > 3 else 0
+        features['chroma_1'] = float(chroma[0] if len(chroma) > 0 else 0)
+        features['chroma_2'] = float(chroma[1] if len(chroma) > 1 else 0)
+        features['chroma_3'] = float(chroma[2] if len(chroma) > 2 else 0)
+        features['chroma_4'] = float(chroma[3] if len(chroma) > 3 else 0)
         
         # Tonnetz features (simplified)
         tonnetz = self._extract_tonnetz_features(chroma)
-        features['tonnetz_1'] = tonnetz[0] if len(tonnetz) > 0 else 0
-        features['tonnetz_2'] = tonnetz[1] if len(tonnetz) > 1 else 0
+        features['tonnetz_1'] = float(tonnetz[0] if len(tonnetz) > 0 else 0)
+        features['tonnetz_2'] = float(tonnetz[1] if len(tonnetz) > 1 else 0)
         
         # Spectral contrast
-        features['spectral_contrast'] = self._extract_spectral_contrast(power_spectrum)
+        features['spectral_contrast'] = float(self._extract_spectral_contrast(power_spectrum))
         
         return features
     
@@ -170,14 +171,14 @@ class FeatureExtractor:
         features = {}
         
         # Kurtosis and skewness
-        features['kurtosis'] = self._kurtosis(samples)
-        features['skewness'] = self._skewness(samples)
+        features['kurtosis'] = float(self._kurtosis(samples))
+        features['skewness'] = float(self._skewness(samples))
         
         # Peak-to-average ratio
-        features['peak_to_avg_ratio'] = np.max(np.abs(samples)) / (np.mean(np.abs(samples)) + 1e-12)
+        features['peak_to_avg_ratio'] = float(np.max(np.abs(samples)) / (np.mean(np.abs(samples)) + 1e-12))
         
         # Crest factor
-        features['crest_factor'] = np.max(np.abs(samples)) / (np.sqrt(np.mean(samples**2)) + 1e-12)
+        features['crest_factor'] = float(np.max(np.abs(samples)) / (np.sqrt(np.mean(samples**2)) + 1e-12))
         
         return features
     
