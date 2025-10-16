@@ -356,8 +356,8 @@ def apply_preset(preset_name):
             errors.append('Failed to set bandwidth')
         
         if success:
-            # Increment usage count
-            preset_manager.increment_usage(preset_name)
+            # Track preset usage
+            preset_manager.track_preset_usage(preset_name)
             
             return jsonify({
                 'success': True,

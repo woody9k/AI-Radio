@@ -7,6 +7,8 @@ const Presets = ({ deviceConnected, onApplyPreset }) => {
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [showCreateForm, setShowCreateForm] = useState(false)
+  const [favorites, setFavorites] = useState([])
+  const [collapsedCategories, setCollapsedCategories] = useState({})
   const [newPreset, setNewPreset] = useState({
     name: '',
     description: '',
@@ -20,7 +22,34 @@ const Presets = ({ deviceConnected, onApplyPreset }) => {
 
   useEffect(() => {
     fetchPresets()
+    loadFavorites()
   }, [selectedCategory, searchQuery])
+
+  const loadFavorites = () => {
+    const saved = localStorage.getItem('preset_favorites')
+    if (saved) {
+      setFavorites(JSON.parse(saved))
+    }
+  }
+
+  const saveFavorites = (newFavs) => {
+    setFavorites(newFavs)
+    localStorage.setItem('preset_favorites', JSON.stringify(newFavs))
+  }
+
+  const toggleFavorite = (presetName) => {
+    const newFavs = favorites.includes(presetName)
+      ? favorites.filter(f => f !== presetName)
+      : [...favorites, presetName]
+    saveFavorites(newFavs)
+  }
+
+  const toggleCategory = (category) => {
+    setCollapsedCategories(prev => ({
+      ...prev,
+      [category]: !prev[category]
+    }))
+  }
 
   const fetchPresets = async () => {
     setLoading(true)
@@ -67,7 +96,7 @@ const Presets = ({ deviceConnected, onApplyPreset }) => {
       
       if (data.success) {
         onApplyPreset(data.device_info)
-        alert(`Applied preset: ${presetName}`)
+        fetchPresets() // Refresh to update last_used
       } else {
         alert(`Failed to apply preset: ${data.error}`)
       }
@@ -128,6 +157,83 @@ const Presets = ({ deviceConnected, onApplyPreset }) => {
   const formatSampleRate = (rate) => {
     return `${(rate / 1e6).toFixed(3)} MS/s`
   }
+
+  const renderPresetCard = (preset, index) => (
+    <div key={index} className="bg-gray-800 p-3 rounded text-xs">
+      <div className="flex justify-between items-start mb-2">
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <h4 className="text-white font-medium">{preset.name}</h4>
+            <button
+              className="text-lg hover:scale-125 transition-transform"
+              onClick={() => toggleFavorite(preset.name)}
+              title={favorites.includes(preset.name) ? 'Remove from favorites' : 'Add to favorites'}
+            >
+              {favorites.includes(preset.name) ? '⭐' : '☆'}
+            </button>
+          </div>
+          <p className="text-gray-300">{preset.description}</p>
+        </div>
+        <span className="bg-gray-700 px-2 py-1 rounded text-xs">
+          {preset.category}
+        </span>
+      </div>
+      
+      <div className="grid grid-cols-2 gap-2 mb-2 text-gray-300">
+        <div>Freq: {formatFrequency(preset.frequency)}</div>
+        <div>Rate: {formatSampleRate(preset.sample_rate)}</div>
+        <div>Gain: {preset.gain}</div>
+        {preset.bandwidth && <div>BW: {formatFrequency(preset.bandwidth)}</div>}
+      </div>
+      
+      {preset.tips && preset.tips.length > 0 && (
+        <div className="mb-2">
+          <p className="text-gray-400 text-xs mb-1">Tips:</p>
+          <ul className="text-gray-400 text-xs space-y-1">
+            {preset.tips.slice(0, 2).map((tip, tipIndex) => (
+              <li key={tipIndex} className="list-disc list-inside">
+                {tip}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      
+      <div className="flex justify-between items-center">
+        <div className="text-gray-500 text-xs">
+          <span>Used {preset.usage_count} times</span>
+          {preset.last_used && (
+            <span className="ml-2">• {new Date(preset.last_used).toLocaleDateString()}</span>
+          )}
+        </div>
+        <button
+          className="btn btn-primary text-xs"
+          onClick={() => handleApplyPreset(preset.name)}
+          disabled={!deviceConnected}
+        >
+          Apply
+        </button>
+      </div>
+    </div>
+  )
+
+  // Get favorites
+  const favoritePresets = presets.filter(p => favorites.includes(p.name))
+  
+  // Get recent (last 5 used)
+  const recentPresets = [...presets]
+    .filter(p => p.last_used)
+    .sort((a, b) => new Date(b.last_used) - new Date(a.last_used))
+    .slice(0, 5)
+  
+  // Group by category
+  const presetsByCategory = {}
+  presets.forEach(preset => {
+    if (!presetsByCategory[preset.category]) {
+      presetsByCategory[preset.category] = []
+    }
+    presetsByCategory[preset.category].push(preset)
+  })
 
   return (
     <div className="card">
@@ -243,8 +349,8 @@ const Presets = ({ deviceConnected, onApplyPreset }) => {
         </form>
       )}
 
-      {/* Search and Filter */}
-      <div className="space-y-2 mb-4">
+      {/* Search */}
+      <div className="mb-4">
         <input
           type="text"
           placeholder="Search presets..."
@@ -252,73 +358,69 @@ const Presets = ({ deviceConnected, onApplyPreset }) => {
           onChange={(e) => setSearchQuery(e.target.value)}
           className="input w-full text-xs"
         />
-        
-        <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-          className="input w-full text-xs"
-        >
-          <option value="">All Categories</option>
-          {categories.map(category => (
-            <option key={category} value={category}>{category}</option>
-          ))}
-        </select>
       </div>
 
       {/* Presets List */}
       {loading ? (
         <p className="text-gray-300 text-sm">Loading presets...</p>
       ) : (
-        <div className="space-y-2 max-h-96 overflow-y-auto">
-          {presets.length === 0 ? (
+        <div className="space-y-3 max-h-96 overflow-y-auto">
+          {/* Favorites Section */}
+          {favoritePresets.length > 0 && (
+            <div>
+              <button
+                className="flex items-center justify-between w-full text-sm font-bold text-yellow-400 mb-2 hover:text-yellow-300"
+                onClick={() => toggleCategory('Favorites')}
+              >
+                <span>⭐ Favorites ({favoritePresets.length})</span>
+                <span>{collapsedCategories['Favorites'] ? '▼' : '▲'}</span>
+              </button>
+              {!collapsedCategories['Favorites'] && (
+                <div className="space-y-2 mb-3">
+                  {favoritePresets.map((preset, idx) => renderPresetCard(preset, `fav-${idx}`))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Recent Section */}
+          {recentPresets.length > 0 && (
+            <div>
+              <button
+                className="flex items-center justify-between w-full text-sm font-bold text-blue-400 mb-2 hover:text-blue-300"
+                onClick={() => toggleCategory('Recent')}
+              >
+                <span>🕐 Recent ({recentPresets.length})</span>
+                <span>{collapsedCategories['Recent'] ? '▼' : '▲'}</span>
+              </button>
+              {!collapsedCategories['Recent'] && (
+                <div className="space-y-2 mb-3">
+                  {recentPresets.map((preset, idx) => renderPresetCard(preset, `recent-${idx}`))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Categories */}
+          {Object.keys(presetsByCategory).sort().map(category => (
+            <div key={category}>
+              <button
+                className="flex items-center justify-between w-full text-sm font-bold text-gray-300 mb-2 hover:text-white"
+                onClick={() => toggleCategory(category)}
+              >
+                <span>{category} ({presetsByCategory[category].length})</span>
+                <span>{collapsedCategories[category] ? '▼' : '▲'}</span>
+              </button>
+              {!collapsedCategories[category] && (
+                <div className="space-y-2 mb-3">
+                  {presetsByCategory[category].map((preset, idx) => renderPresetCard(preset, `${category}-${idx}`))}
+                </div>
+              )}
+            </div>
+          ))}
+
+          {presets.length === 0 && (
             <p className="text-gray-300 text-sm">No presets found</p>
-          ) : (
-            presets.map((preset, index) => (
-              <div key={index} className="bg-gray-800 p-3 rounded text-xs">
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <h4 className="text-white font-medium">{preset.name}</h4>
-                    <p className="text-gray-300">{preset.description}</p>
-                  </div>
-                  <span className="bg-gray-700 px-2 py-1 rounded text-xs">
-                    {preset.category}
-                  </span>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-2 mb-2 text-gray-300">
-                  <div>Freq: {formatFrequency(preset.frequency)}</div>
-                  <div>Rate: {formatSampleRate(preset.sample_rate)}</div>
-                  <div>Gain: {preset.gain}</div>
-                  {preset.bandwidth && <div>BW: {formatFrequency(preset.bandwidth)}</div>}
-                </div>
-                
-                {preset.tips && preset.tips.length > 0 && (
-                  <div className="mb-2">
-                    <p className="text-gray-400 text-xs mb-1">Tips:</p>
-                    <ul className="text-gray-400 text-xs space-y-1">
-                      {preset.tips.slice(0, 2).map((tip, tipIndex) => (
-                        <li key={tipIndex} className="list-disc list-inside">
-                          {tip}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-500 text-xs">
-                    Used {preset.usage_count} times
-                  </span>
-                  <button
-                    className="btn btn-primary text-xs"
-                    onClick={() => handleApplyPreset(preset.name)}
-                    disabled={!deviceConnected}
-                  >
-                    Apply
-                  </button>
-                </div>
-              </div>
-            ))
           )}
         </div>
       )}
@@ -327,5 +429,3 @@ const Presets = ({ deviceConnected, onApplyPreset }) => {
 }
 
 export default Presets
-
-

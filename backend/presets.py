@@ -27,6 +27,7 @@ class Preset:
         self.tips = tips or []
         self.created_at = datetime.now().isoformat()
         self.usage_count = 0
+        self.last_used = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert preset to dictionary."""
@@ -40,7 +41,8 @@ class Preset:
             'category': self.category,
             'tips': self.tips,
             'created_at': self.created_at,
-            'usage_count': self.usage_count
+            'usage_count': self.usage_count,
+            'last_used': self.last_used
         }
     
     @classmethod
@@ -58,6 +60,7 @@ class Preset:
         )
         preset.created_at = data.get('created_at', datetime.now().isoformat())
         preset.usage_count = data.get('usage_count', 0)
+        preset.last_used = data.get('last_used')
         return preset
 
 
@@ -278,6 +281,16 @@ class PresetManager:
     def get_preset(self, name: str) -> Optional[Preset]:
         """Get a specific preset by name."""
         return self.presets.get(name)
+    
+    def track_preset_usage(self, preset_name: str):
+        """Track usage of a preset (increment count and update last_used)."""
+        preset = self.get_preset(preset_name)
+        if preset:
+            preset.usage_count += 1
+            preset.last_used = datetime.now().isoformat()
+            self.save_custom_presets()
+            return True
+        return False
     
     def add_custom_preset(self, preset: Preset) -> bool:
         """Add a new custom preset."""
