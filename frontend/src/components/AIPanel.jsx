@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 
-const AIPanel = ({ detections, streaming, viewMode = 'beginner' }) => {
+const AIPanel = ({ detections, streaming, viewMode = 'beginner', onListenToSignal }) => {
   const [anomalies, setAnomalies] = useState([])
   const [signalTypes, setSignalTypes] = useState([])
   const [aiEnabled, setAiEnabled] = useState(false)
@@ -241,9 +241,21 @@ const AIPanel = ({ detections, streaming, viewMode = 'beginner' }) => {
                 {signalTypes.slice(0, 10).map((signal, index) => (
                   <div key={index} className="bg-gray-800 p-2 rounded text-xs">
                     <div className="flex justify-between items-center mb-1">
-                      <span className="text-white font-medium">
-                        {signal.type}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-white font-medium">
+                          {signal.type}
+                        </span>
+                        {onListenToSignal && (
+                          <button
+                            className="btn btn-primary"
+                            style={{ fontSize: '10px', padding: '2px 6px' }}
+                            onClick={() => onListenToSignal(signal)}
+                            title="Listen to this signal"
+                          >
+                            🔊
+                          </button>
+                        )}
+                      </div>
                       <span className={getConfidenceColor(signal.confidence)}>
                         {(signal.confidence * 100).toFixed(0)}%
                       </span>

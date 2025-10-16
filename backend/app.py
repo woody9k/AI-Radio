@@ -23,6 +23,7 @@ from signal_processor import SignalProcessor, WaterfallProcessor
 from presets import preset_manager, Preset
 from ml.data_handler import data_collector
 from ml.signal_classifier import signal_classifier
+from audio_demodulator import AudioDemodulator
 from dataclasses import asdict
 
 # Configure logging
@@ -40,9 +41,13 @@ CORS(app)
 # Global instances
 signal_processor = SignalProcessor()
 waterfall_processor = WaterfallProcessor()
+audio_demodulator = AudioDemodulator()
 current_device: Optional[SDRDevice] = None
 streaming_active = False
 streaming_thread: Optional[threading.Thread] = None
+audio_streaming_active = False
+audio_streaming_thread: Optional[threading.Thread] = None
+audio_mode = 'FM'  # Current demodulation mode
 
 
 @app.route('/')
@@ -507,6 +512,119 @@ def get_classification_stats():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/audio/start', methods=['POST'])
+def start_audio():
+    """Start audio demodulation and streaming."""
+    global audio_streaming_active, audio_streaming_thread, audio_mode, current_device
+    
+    if not current_device or not current_device.is_connected:
+        return jsonify({'success': False, 'error': 'No device connected'}), 400
+    
+    if audio_streaming_active:
+        return jsonify({'success': False, 'error': 'Audio already streaming'}), 400
+    
+    try:
+        data = request.get_json() or {}
+        audio_mode = data.get('mode', 'FM').upper()
+        
+        # Optional: tune to specific frequency if provided
+        if 'frequency' in data:
+            current_device.set_frequency(int(data['frequency']))
+        
+        # Update audio demodulator sample rate
+        audio_demodulator.update_sample_rate(current_device.sample_rate)
+        
+        # Start audio streaming thread
+        audio_streaming_active = True
+        audio_streaming_thread = threading.Thread(target=audio_worker, daemon=True)
+        audio_streaming_thread.start()
+        
+        logger.info(f"Started audio streaming in {audio_mode} mode")
+        
+        return jsonify({
+            'success': True,
+            'mode': audio_mode,
+            'frequency': current_device.frequency,
+            'sample_rate': current_device.sample_rate
+        })
+    except Exception as e:
+        logger.error(f"Error starting audio: {e}")
+        audio_streaming_active = False
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/audio/stop', methods=['POST'])
+def stop_audio():
+    """Stop audio demodulation and streaming."""
+    global audio_streaming_active, audio_streaming_thread
+    
+    if not audio_streaming_active:
+        return jsonify({'success': False, 'error': 'Audio not streaming'}), 400
+    
+    try:
+        audio_streaming_active = False
+        
+        # Wait for thread to finish
+        if audio_streaming_thread and audio_streaming_thread.is_alive():
+            audio_streaming_thread.join(timeout=2.0)
+        
+        logger.info("Stopped audio streaming")
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Error stopping audio: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/tune_signal', methods=['POST'])
+def tune_signal():
+    """Smart tuning: tune to a signal and start audio with appropriate settings."""
+    global current_device, audio_mode
+    
+    if not current_device or not current_device.is_connected:
+        return jsonify({'success': False, 'error': 'No device connected'}), 400
+    
+    try:
+        data = request.get_json()
+        
+        # Extract signal parameters
+        frequency = data.get('frequency')
+        bandwidth = data.get('bandwidth')
+        modulation = data.get('modulation', 'FM')
+        
+        if not frequency:
+            return jsonify({'success': False, 'error': 'Frequency required'}), 400
+        
+        # Tune to frequency
+        current_device.set_frequency(int(frequency))
+        
+        # Set bandwidth if provided and device supports it
+        if bandwidth:
+            try:
+                current_device.set_bandwidth(int(bandwidth))
+            except Exception as e:
+                logger.warning(f"Could not set bandwidth: {e}")
+        
+        # Determine audio mode from modulation
+        if 'AM' in modulation.upper():
+            audio_mode = 'AM'
+        elif 'FM' in modulation.upper():
+            audio_mode = 'FM'
+        else:
+            audio_mode = 'FM'  # Default
+        
+        # Start audio streaming
+        response = start_audio()
+        
+        logger.info(f"Tuned to signal at {frequency/1e6:.3f} MHz ({modulation})")
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error tuning to signal: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/classifications/label', methods=['POST'])
 def label_signal():
     """Manually label a signal for training."""
@@ -561,6 +679,46 @@ def handle_leave_room(data):
     room = data.get('room', 'default')
     leave_room(room)
     emit('status', {'message': f'Left room: {room}'})
+
+
+def audio_worker():
+    """Worker thread for audio demodulation and streaming."""
+    global current_device, audio_streaming_active, audio_mode, audio_demodulator
+    
+    logger.info(f"Starting audio worker in {audio_mode} mode")
+    
+    # Buffer size for reading samples (adjust for smooth audio)
+    buffer_size = 65536  # Larger buffer for audio processing
+    
+    while audio_streaming_active and current_device and current_device.is_connected:
+        try:
+            # Read IQ samples
+            samples = current_device.read_samples(buffer_size)
+            if samples is None:
+                time.sleep(0.01)
+                continue
+            
+            # Demodulate to audio
+            audio = audio_demodulator.demodulate(samples, mode=audio_mode)
+            
+            # Convert to format suitable for web audio (float32 array to list)
+            audio_data = audio.tolist()
+            
+            # Emit audio data via WebSocket
+            socketio.emit('audio_samples', {
+                'samples': audio_data,
+                'sample_rate': audio_demodulator.audio_rate,
+                'mode': audio_mode
+            })
+            
+            # Small sleep to prevent overwhelming the socket
+            time.sleep(0.05)
+            
+        except Exception as e:
+            logger.error(f"Error in audio worker: {e}")
+            time.sleep(0.1)
+    
+    logger.info("Audio worker stopped")
 
 
 def streaming_worker():

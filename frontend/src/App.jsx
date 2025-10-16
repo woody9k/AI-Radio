@@ -5,6 +5,7 @@ import SpectrumDisplay from './components/SpectrumDisplay'
 import DeviceStatus from './components/DeviceStatus'
 import AIPanel from './components/AIPanel'
 import Presets from './components/Presets'
+import AudioPlayer from './components/AudioPlayer'
 import './App.css'
 
 function App() {
@@ -153,6 +154,41 @@ function App() {
     }
   }
 
+  const tuneToFrequency = async (frequency, bandwidth = null) => {
+    const settings = { frequency }
+    if (bandwidth) {
+      settings.bandwidth = bandwidth
+    }
+    await updateSettings(settings)
+  }
+
+  const listenToSignal = async (signal) => {
+    try {
+      const response = await fetch('/api/tune_signal', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          frequency: signal.frequency,
+          bandwidth: signal.bandwidth,
+          modulation: signal.modulation || signal.mod || 'FM'
+        })
+      })
+      
+      const data = await response.json()
+      
+      if (data.success) {
+        console.log('Tuned to signal and started audio')
+      } else {
+        alert(`Failed to listen to signal: ${data.error}`)
+      }
+    } catch (error) {
+      console.error('Error listening to signal:', error)
+      alert('Error listening to signal')
+    }
+  }
+
   return (
     <div className="app">
       <header className="app-header">
@@ -171,6 +207,11 @@ function App() {
             deviceInfo={deviceInfo}
             onConnect={connectDevice}
             onDisconnect={disconnectDevice}
+          />
+          
+          <AudioPlayer
+            socket={socket}
+            deviceConnected={deviceConnected}
           />
           
           <Controls
@@ -193,6 +234,7 @@ function App() {
             spectrumData={spectrumData}
             waterfallData={waterfallData}
             streaming={streaming}
+            onTuneToFrequency={tuneToFrequency}
           />
         </div>
 
@@ -215,6 +257,7 @@ function App() {
             detections={aiDetections}
             streaming={streaming}
             viewMode={viewMode}
+            onListenToSignal={listenToSignal}
           />
         </div>
       </div>

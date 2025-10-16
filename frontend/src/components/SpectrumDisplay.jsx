@@ -1,9 +1,13 @@
 import React, { useRef, useEffect, useState } from 'react'
 
-const SpectrumDisplay = ({ spectrumData, waterfallData, streaming }) => {
+const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequency }) => {
   const canvasRef = useRef(null)
   const waterfallRef = useRef(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 400 })
+  const [mousePos, setMousePos] = useState(null)
+  const [dragStart, setDragStart] = useState(null)
+  const [dragEnd, setDragEnd] = useState(null)
+  const [isDragging, setIsDragging] = useState(false)
 
   useEffect(() => {
     const updateDimensions = () => {
@@ -20,6 +24,96 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming }) => {
     window.addEventListener('resize', updateDimensions)
     return () => window.removeEventListener('resize', updateDimensions)
   }, [])
+
+  const formatFrequency = (freq) => {
+    if (freq >= 1e9) {
+      return `${(freq / 1e9).toFixed(3)} GHz`
+    } else if (freq >= 1e6) {
+      return `${(freq / 1e6).toFixed(3)} MHz`
+    } else if (freq >= 1e3) {
+      return `${(freq / 1e3).toFixed(3)} kHz`
+    } else {
+      return `${freq.toFixed(0)} Hz`
+    }
+  }
+
+  const handleMouseMove = (e) => {
+    if (!canvasRef.current || !spectrumData) return
+    
+    const rect = canvasRef.current.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    
+    setMousePos({ x, y })
+    
+    if (isDragging && dragStart) {
+      setDragEnd({ x, y })
+    }
+  }
+
+  const handleMouseDown = (e) => {
+    if (!canvasRef.current) return
+    
+    const rect = canvasRef.current.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    
+    setDragStart({ x, y })
+    setIsDragging(true)
+  }
+
+  const handleMouseUp = (e) => {
+    if (!isDragging || !dragStart || !spectrumData) return
+    
+    const rect = canvasRef.current.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    
+    const width = rect.width
+    const frequencies = spectrumData.frequencies
+    
+    if (Math.abs(x - dragStart.x) < 5) {
+      // Single click - tune to frequency
+      const freqIndex = Math.floor((dragStart.x / width) * frequencies.length)
+      const targetFreq = frequencies[freqIndex]
+      
+      if (onTuneToFrequency) {
+        onTuneToFrequency(targetFreq)
+      }
+    } else {
+      // Drag - select bandwidth and tune to center
+      const startIndex = Math.floor((Math.min(dragStart.x, x) / width) * frequencies.length)
+      const endIndex = Math.floor((Math.max(dragStart.x, x) / width) * frequencies.length)
+      
+      const startFreq = frequencies[startIndex]
+      const endFreq = frequencies[endIndex]
+      const centerFreq = (startFreq + endFreq) / 2
+      const bandwidth = Math.abs(endFreq - startFreq)
+      
+      if (onTuneToFrequency) {
+        onTuneToFrequency(centerFreq, bandwidth)
+      }
+    }
+    
+    // Reset drag state
+    setDragStart(null)
+    setDragEnd(null)
+    setIsDragging(false)
+  }
+
+  const handleMouseLeave = () => {
+    setMousePos(null)
+    if (isDragging) {
+      setDragStart(null)
+      setDragEnd(null)
+      setIsDragging(false)
+    }
+  }
+
+  const handleSignalClick = (signal) => {
+    if (onTuneToFrequency) {
+      onTuneToFrequency(signal.frequency, signal.bandwidth)
+    }
+  }
 
   useEffect(() => {
     if (!spectrumData || !canvasRef.current) return
@@ -71,7 +165,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming }) => {
       for (let i = 0; i < spectrum.length; i++) {
         const x = (i / (spectrum.length - 1)) * width
         const normalizedPower = (spectrum[i] - minPower) / powerRange
-        const y = height - (normalizedPower * height)
+        const y = height - (normalizedPower * height * 0.9) - height * 0.05
 
         if (i === 0) {
           ctx.moveTo(x, y)
@@ -83,32 +177,101 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming }) => {
 
       // Draw detected signals
       if (spectrumData.signals) {
-        spectrumData.signals.forEach(signal => {
+        spectrumData.signals.forEach((signal, idx) => {
           const signalIndex = frequencies.findIndex(f => 
-            Math.abs(f - (signal.frequency - spectrumData.frequencies[0])) < 1000
+            Math.abs(f - (signal.frequency - frequencies[0])) < 1000
           )
           
           if (signalIndex !== -1) {
             const x = (signalIndex / (frequencies.length - 1)) * width
             const normalizedPower = (signal.power - minPower) / powerRange
-            const y = height - (normalizedPower * height)
+            const y = height - (normalizedPower * height * 0.9) - height * 0.05
 
             // Draw signal marker
-            ctx.fillStyle = '#ef4444'
+            ctx.fillStyle = signal.category && signal.category !== 'unknown' ? '#10b981' : '#ef4444'
             ctx.beginPath()
-            ctx.arc(x, y, 4, 0, 2 * Math.PI)
+            ctx.arc(x, y, 5, 0, 2 * Math.PI)
             ctx.fill()
+            
+            // Draw border for clickability
+            ctx.strokeStyle = '#ffffff'
+            ctx.lineWidth = 1
+            ctx.stroke()
 
             // Draw signal label
             ctx.fillStyle = '#ffffff'
-            ctx.font = '12px Arial'
-            ctx.fillText(
-              `${(signal.frequency / 1e6).toFixed(3)} MHz`,
-              x + 8,
-              y - 8
-            )
+            ctx.font = '11px Arial'
+            const label = `${(signal.frequency / 1e6).toFixed(3)} MHz`
+            ctx.fillText(label, x + 8, y - 8)
+            
+            // Show category if classified
+            if (signal.category && signal.category !== 'unknown') {
+              ctx.fillStyle = '#10b981'
+              ctx.font = '9px Arial'
+              ctx.fillText(signal.description || signal.category, x + 8, y + 4)
+            }
           }
         })
+      }
+      
+      // Draw frequency scale
+      ctx.fillStyle = '#999'
+      ctx.font = '12px Arial'
+      const numLabels = 5
+      for (let i = 0; i <= numLabels; i++) {
+        const x = (i / numLabels) * width
+        const freqIndex = Math.floor((i / numLabels) * frequencies.length)
+        const freq = frequencies[freqIndex]
+        const label = formatFrequency(freq)
+        const labelWidth = ctx.measureText(label).width
+        ctx.fillText(label, x - labelWidth / 2, height - 5)
+      }
+    }
+
+    // Draw drag selection box
+    if (isDragging && dragStart && dragEnd) {
+      ctx.strokeStyle = '#3b82f6'
+      ctx.fillStyle = 'rgba(59, 130, 246, 0.1)'
+      ctx.lineWidth = 2
+      const x = Math.min(dragStart.x, dragEnd.x)
+      const w = Math.abs(dragEnd.x - dragStart.x)
+      ctx.fillRect(x, 0, w, height)
+      ctx.strokeRect(x, 0, w, height)
+      
+      // Show bandwidth label
+      if (spectrumData.frequencies) {
+        const frequencies = spectrumData.frequencies
+        const width = dimensions.width
+        const startIndex = Math.floor((Math.min(dragStart.x, dragEnd.x) / width) * frequencies.length)
+        const endIndex = Math.floor((Math.max(dragStart.x, dragEnd.x) / width) * frequencies.length)
+        const bandwidth = Math.abs(frequencies[endIndex] - frequencies[startIndex])
+        
+        ctx.fillStyle = '#3b82f6'
+        ctx.font = 'bold 14px Arial'
+        const bwLabel = `BW: ${formatFrequency(bandwidth)}`
+        const labelWidth = ctx.measureText(bwLabel).width
+        ctx.fillText(bwLabel, (dragStart.x + dragEnd.x) / 2 - labelWidth / 2, 30)
+      }
+    }
+
+    // Draw mouse tooltip
+    if (mousePos && !isDragging && spectrumData.frequencies && spectrumData.spectrum) {
+      const frequencies = spectrumData.frequencies
+      const spectrum = spectrumData.spectrum
+      const freqIndex = Math.floor((mousePos.x / width) * frequencies.length)
+      
+      if (freqIndex >= 0 && freqIndex < frequencies.length) {
+        const freq = frequencies[freqIndex]
+        const power = spectrum[freqIndex]
+        
+        // Draw tooltip
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'
+        ctx.fillRect(mousePos.x + 10, mousePos.y - 40, 150, 35)
+        
+        ctx.fillStyle = '#ffffff'
+        ctx.font = '11px Arial'
+        ctx.fillText(`Freq: ${formatFrequency(freq)}`, mousePos.x + 15, mousePos.y - 25)
+        ctx.fillText(`Power: ${power.toFixed(1)} dB`, mousePos.x + 15, mousePos.y - 12)
       }
     }
 
@@ -116,7 +279,11 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming }) => {
     ctx.fillStyle = '#ffffff'
     ctx.font = '14px Arial'
     ctx.fillText('Power (dB)', 10, 20)
-    ctx.fillText('Frequency', width - 100, height - 10)
+    
+    // Draw instructions
+    ctx.fillStyle = '#666'
+    ctx.font = '11px Arial'
+    ctx.fillText('Click to tune | Drag to select bandwidth', 10, height - 25)
 
     // Draw power scale
     if (spectrumData.spectrum) {
@@ -125,11 +292,11 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming }) => {
       
       ctx.fillStyle = '#666'
       ctx.font = '12px Arial'
-      ctx.fillText(`${maxPower.toFixed(0)} dB`, 10, 30)
-      ctx.fillText(`${minPower.toFixed(0)} dB`, 10, height - 10)
+      ctx.fillText(`${maxPower.toFixed(0)} dB`, 10, 35)
+      ctx.fillText(`${minPower.toFixed(0)} dB`, 10, height - 40)
     }
 
-  }, [spectrumData, dimensions])
+  }, [spectrumData, dimensions, mousePos, dragStart, dragEnd, isDragging])
 
   useEffect(() => {
     if (!waterfallData || !waterfallRef.current) return
@@ -192,7 +359,11 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming }) => {
             ref={canvasRef}
             width={dimensions.width}
             height={dimensions.height}
-            style={{ border: '1px solid #333', borderRadius: '4px' }}
+            style={{ border: '1px solid #333', borderRadius: '4px', cursor: 'crosshair' }}
+            onMouseMove={handleMouseMove}
+            onMouseDown={handleMouseDown}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseLeave}
           />
         </div>
 
@@ -219,6 +390,22 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming }) => {
               </span>
             </div>
             <div>
+              <span className="text-gray-300">Center Frequency:</span>
+              <span className="text-white ml-2">
+                {spectrumData.frequencies && spectrumData.frequencies.length > 0 
+                  ? formatFrequency(spectrumData.frequencies[Math.floor(spectrumData.frequencies.length / 2)])
+                  : 'N/A'}
+              </span>
+            </div>
+            <div>
+              <span className="text-gray-300">Span:</span>
+              <span className="text-white ml-2">
+                {spectrumData.frequencies && spectrumData.frequencies.length > 1
+                  ? formatFrequency(spectrumData.frequencies[spectrumData.frequencies.length - 1] - spectrumData.frequencies[0])
+                  : 'N/A'}
+              </span>
+            </div>
+            <div>
               <span className="text-gray-300">Last Update:</span>
               <span className="text-white ml-2">
                 {new Date(spectrumData.timestamp).toLocaleTimeString()}
@@ -232,5 +419,3 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming }) => {
 }
 
 export default SpectrumDisplay
-
-
