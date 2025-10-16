@@ -44,8 +44,13 @@ const AudioPlayer = ({ socket, deviceConnected }) => {
     if (!audioContextRef.current || !audioPlaying) return
     
     try {
+      if (!data || !data.samples || !Array.isArray(data.samples)) {
+        console.warn('Invalid audio data received:', data)
+        return
+      }
+      
       const { samples, sample_rate, mode } = data
-      audioSampleRateRef.current = sample_rate
+      audioSampleRateRef.current = sample_rate || 48000
       
       // Create audio buffer
       const audioBuffer = audioContextRef.current.createBuffer(

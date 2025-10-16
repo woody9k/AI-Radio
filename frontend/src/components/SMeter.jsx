@@ -7,14 +7,15 @@ const SMeter = ({ spectrumData }) => {
   const peakHoldTimer = useRef(null)
 
   useEffect(() => {
-    if (!spectrumData || !spectrumData.spectrum) return
+    if (!spectrumData || !spectrumData.spectrum || !Array.isArray(spectrumData.spectrum) || spectrumData.spectrum.length === 0) return
 
-    // Calculate average power from spectrum
-    const spectrum = spectrumData.spectrum
-    const avgPower = spectrum.reduce((sum, val) => sum + val, 0) / spectrum.length
+    try {
+      // Calculate average power from spectrum
+      const spectrum = spectrumData.spectrum
+      const avgPower = spectrum.reduce((sum, val) => sum + val, 0) / spectrum.length
 
-    // Find peak power
-    const maxPower = Math.max(...spectrum)
+      // Find peak power
+      const maxPower = Math.max(...spectrum)
 
     setPower(maxPower)
 
@@ -37,10 +38,13 @@ const SMeter = ({ spectrumData }) => {
       }, 2000)
     }
 
-    return () => {
-      if (peakHoldTimer.current) {
-        clearTimeout(peakHoldTimer.current)
+      return () => {
+        if (peakHoldTimer.current) {
+          clearTimeout(peakHoldTimer.current)
+        }
       }
+    } catch (error) {
+      console.error('Error in SMeter useEffect:', error)
     }
   }, [spectrumData])
 
