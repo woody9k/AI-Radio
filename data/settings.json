@@ -1,0 +1,7 @@
+{
+  "openai_api_key": null,
+  "openai_model": "gpt-4o-mini",
+  "provider": "openai",
+  "auto_execute": false,
+  "region": "auto"
+}

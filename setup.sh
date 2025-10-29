@@ -12,7 +12,7 @@ fi
 # Install system dependencies
 echo "📦 Installing system dependencies..."
 sudo apt update
-sudo apt install -y python3-venv python3-pip nodejs npm
+sudo apt install -y python3-venv python3-pip nodejs npm curl
 
 # Install RTL-SDR dependencies
 echo "📡 Installing RTL-SDR system dependencies..."
@@ -64,13 +64,14 @@ echo "✅ Setup complete!"
 echo ""
 echo "🚀 To start AI-Radio, run: ./start.sh"
 echo "📡 Backend will be available at: http://localhost:5000"
-echo "🌐 Frontend will be available at: http://localhost:3000"
+echo "🌐 Frontend will be available at: http://localhost:3000 (binds to 0.0.0.0)"
 echo ""
 echo "📋 Next steps:"
 echo "1. Connect your RTL-SDR device"
 echo "2. Test your device: rtl_test -t"
 echo "3. Run ./start.sh to start the application"
 echo "4. Open http://localhost:3000 in your browser"
+echo "5. In Settings page, add your OpenAI API key (or export OPENAI_API_KEY)"
 echo ""
 echo "🔧 Troubleshooting:"
 echo "- If you get 'usb_claim_interface error -6', another process is using the device"

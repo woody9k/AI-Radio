@@ -11,9 +11,10 @@ fi
 
 # Start backend
 echo "🔧 Starting backend server..."
+export PYTHONPATH="$(pwd)"
 cd backend
 source ../venv/bin/activate
-python app.py &
+PYTHONPATH="$(dirname "$(pwd)")" python app.py &
 BACKEND_PID=$!
 cd ..
 
@@ -23,13 +24,17 @@ sleep 3
 # Start frontend
 echo "🎨 Starting frontend server..."
 cd frontend
-npm run dev &
+if ! command -v npm >/dev/null 2>&1; then
+  echo "❌ npm not found. Run ./setup.sh or: sudo apt install npm nodejs"
+  exit 1
+fi
+npm run dev -- --port ${PORT:-3000} --host 0.0.0.0 &
 FRONTEND_PID=$!
 cd ..
 
 echo "✅ AI-Radio is starting up!"
 echo "📡 Backend: http://localhost:5000"
-echo "🌐 Frontend: http://localhost:3000"
+echo "🌐 Frontend: http://localhost:${PORT:-3000}"
 echo ""
 echo "Press Ctrl+C to stop both servers"
 

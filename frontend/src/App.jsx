@@ -4,6 +4,8 @@ import Controls from './components/Controls'
 import SpectrumDisplay from './components/SpectrumDisplay'
 import DeviceStatus from './components/DeviceStatus'
 import AIPanel from './components/AIPanel'
+import ChatPanel from './components/ChatPanel'
+import SettingsPage from './components/SettingsPage'
 import Presets from './components/Presets'
 import AudioPlayer from './components/AudioPlayer'
 import SMeter from './components/SMeter'
@@ -19,6 +21,7 @@ function App() {
   const [deviceInfo, setDeviceInfo] = useState(null)
   const [aiDetections, setAiDetections] = useState([])
   const [viewMode, setViewMode] = useState('beginner') // 'beginner' or 'advanced'
+  const [activePane, setActivePane] = useState('radio') // 'radio' | 'chat' | 'settings'
 
   useEffect(() => {
     // Initialize WebSocket connection
@@ -238,7 +241,25 @@ function App() {
         </div>
       </header>
 
+      <div style={{ padding: 8, borderBottom: '1px solid #eee', display: 'flex', gap: 8 }}>
+        <button onClick={() => setActivePane('radio')}>Radio</button>
+        <button onClick={() => setActivePane('chat')}>AI Chat</button>
+        <button onClick={() => setActivePane('settings')}>Settings</button>
+      </div>
+
       <div className="app-content">
+        {activePane === 'chat' && (
+          <div className="main-content" style={{ width: '100%' }}>
+            <ChatPanel />
+          </div>
+        )}
+        {activePane === 'settings' && (
+          <div className="main-content" style={{ width: '100%' }}>
+            <SettingsPage />
+          </div>
+        )}
+        {activePane === 'radio' && (
+        <>
         <div className="left-panel">
           <DeviceStatus 
             deviceConnected={deviceConnected}
@@ -299,6 +320,8 @@ function App() {
             onListenToSignal={listenToSignal}
           />
         </div>
+        </>
+        )}
       </div>
     </div>
   )

@@ -26,6 +26,18 @@ from ml.signal_classifier import signal_classifier
 from audio_demodulator import AudioDemodulator
 from dataclasses import asdict
 
+# AI modules
+try:
+	from backend.ai.openai_client import OpenAIClient
+	from backend.ai.intent_schema import IntentParseResult
+	from backend.ai.intent_router import execute_intent
+	from backend.ai.prompt_templates import SYSTEM_PROMPT
+except Exception:
+	OpenAIClient = None
+    # IntentParseResult, execute_intent, SYSTEM_PROMPT may be unavailable until installed
+
+from backend.settings import get_settings, update_settings
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -66,6 +78,93 @@ def health_check():
         'streaming': streaming_active,
         'timestamp': datetime.now().isoformat()
     })
+
+
+@app.route('/api/settings/ai', methods=['GET', 'POST'])
+def ai_settings():
+    """Get or update AI settings (OpenAI key, model, provider)."""
+    if request.method == 'GET':
+        settings = get_settings().copy()
+        # Mask the API key
+        if settings.get('openai_api_key'):
+            settings['openai_api_key'] = '****'
+        return jsonify({'success': True, 'settings': settings})
+
+    data = request.get_json() or {}
+    saved = update_settings({
+        'openai_api_key': data.get('openai_api_key'),
+        'openai_model': data.get('openai_model'),
+        'provider': data.get('provider'),
+        'auto_execute': data.get('auto_execute'),
+        'region': data.get('region')
+    })
+    # Mask in response
+    if saved.get('openai_api_key'):
+        saved['openai_api_key'] = '****'
+    return jsonify({'success': True, 'settings': saved})
+
+
+def _read_spectrum_at(center_freq_hz):
+    """Helper for scanning utilities: tune and return a single FFT frame (freqs, spectrum_db)."""
+    global current_device
+    try:
+        if not current_device or not current_device.is_connected:
+            return None, None
+        current_device.set_frequency(float(center_freq_hz))
+        samples = current_device.read_samples(signal_processor.fft_size)
+        if samples is None:
+            return None, None
+        freqs, spectrum = signal_processor.compute_fft(samples)
+        spectrum_db = 10 * np.log10(np.maximum(np.abs(spectrum), 1e-12))
+        return freqs, spectrum_db
+    except Exception:
+        return None, None
+
+
+@app.route('/api/ai/command', methods=['POST'])
+def ai_command():
+    """Parse and optionally execute a natural-language command via OpenAI."""
+    global current_device
+    data = request.get_json() or {}
+    text = data.get('text', '')
+    dry_run = bool(data.get('dry_run', False))
+
+    if OpenAIClient is None:
+        return jsonify({'success': False, 'error': 'AI modules not available'}), 500
+
+    try:
+        client = OpenAIClient()
+        parsed = client.parse_intent(text, SYSTEM_PROMPT)
+        # Validate structure if pydantic available
+        try:
+            _ = IntentParseResult(**{
+                'intent': parsed.get('intent'),
+                'params': parsed.get('params', {}),
+                'meta': parsed.get('meta'),
+                'explanation': parsed.get('explanation')
+            })
+        except Exception:
+            pass
+
+        result = {'success': True, 'intent': parsed}
+
+        if not dry_run:
+            exec_ctx = {
+                'current_device': current_device,
+                'signal_processor': signal_processor,
+                'read_spectrum_fn': _read_spectrum_at,
+                'preset_manager': preset_manager,
+            }
+            exec_res = execute_intent(parsed, exec_ctx)
+            result['executed'] = True
+            result['result'] = exec_res
+        else:
+            result['executed'] = False
+
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"AI command error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/devices', methods=['GET'])
