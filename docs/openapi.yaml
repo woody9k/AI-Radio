@@ -1,0 +1,151 @@
+openapi: 3.1.0
+info:
+  title: AI-Radio API
+  version: 0.1.0
+servers:
+  - url: http://localhost:5000
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+  /api/devices:
+    get:
+      summary: List devices
+      responses:
+        '200':
+          description: OK
+  /api/devices/{index}/connect:
+    post:
+      summary: Connect device
+      parameters:
+        - in: path
+          name: index
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: OK }
+  /api/devices/{index}/disconnect:
+    post:
+      summary: Disconnect device
+      parameters:
+        - in: path
+          name: index
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: OK }
+  /api/settings:
+    get:
+      summary: Get SDR settings
+      responses:
+        '200': { description: OK }
+    post:
+      summary: Update SDR settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200': { description: OK }
+  /api/stream/start:
+    post:
+      summary: Start streaming
+      responses:
+        '200': { description: OK }
+  /api/stream/stop:
+    post:
+      summary: Stop streaming
+      responses:
+        '200': { description: OK }
+  /api/spectrum:
+    get:
+      summary: Get one-shot spectrum
+      responses:
+        '200': { description: OK }
+  /api/presets:
+    get:
+      summary: List presets
+      responses:
+        '200': { description: OK }
+    post:
+      summary: Create preset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200': { description: OK }
+  /api/presets/{name}/apply:
+    post:
+      summary: Apply preset
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/classifications:
+    get:
+      summary: Recent classifications
+      responses:
+        '200': { description: OK }
+  /api/classifications/stats:
+    get:
+      summary: Classification stats
+      responses:
+        '200': { description: OK }
+  /api/audio/start:
+    post:
+      summary: Start audio demod
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200': { description: OK }
+  /api/audio/stop:
+    post:
+      summary: Stop audio demod
+      responses:
+        '200': { description: OK }
+  /api/tune_signal:
+    post:
+      summary: Tune to a signal and start audio
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200': { description: OK }
+  /api/settings/ai:
+    get:
+      summary: Get AI settings (masked key)
+      responses:
+        '200': { description: OK }
+    post:
+      summary: Update AI settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200': { description: OK }
+  /api/ai/command:
+    post:
+      summary: Parse and execute AI command
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200': { description: OK }

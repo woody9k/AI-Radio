@@ -119,6 +119,23 @@ This project follows a progressive enhancement approach:
 2. Add AI models progressively
 3. Implement advanced features as optional components
 
+### Documentation & Standards
+- Style Guide: `docs/STYLE_GUIDE.md`
+- Coding Standards: `docs/CODING_STANDARDS.md`
+- API Docs: `docs/API.md` (OpenAPI: `docs/openapi.yaml`)
+- Architecture: `docs/ARCHITECTURE.md`
+- User Guide: `docs/USER_GUIDE.md`
+- Configuration: `docs/CONFIGURATION.md`
+- Operations: `docs/OPERATIONS.md`
+- Security: `docs/SECURITY.md`
+
+### Session Init
+For each dev session, run:
+```bash
+scripts/session_init.sh --fix
+```
+This checks conformance (lint/format), applies fixes, optionally tests device/AI, and starts services.
+
 ## Testing Your RTL-SDR Setup
 
 **Test your RTL-SDR device:**
