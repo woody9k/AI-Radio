@@ -1,9 +1,10 @@
-import React, { useRef, useEffect, useState } from 'react'
+import React, { useRef, useEffect, useState, useMemo } from 'react'
 
 const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequency, currentFrequency, currentBandwidth, onListenToSignal, onBookmarkSignal }) => {
   const canvasRef = useRef(null)
   const waterfallRef = useRef(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 400 })
+  const [inputFrequency, setInputFrequency] = useState(currentFrequency || 100000000)
   const [mousePos, setMousePos] = useState(null)
   const [dragStart, setDragStart] = useState(null)
   const [dragEnd, setDragEnd] = useState(null)
@@ -39,6 +40,44 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
     window.addEventListener('resize', updateDimensions)
     return () => window.removeEventListener('resize', updateDimensions)
   }, [])
+
+  useEffect(() => {
+    if (currentFrequency) {
+      setInputFrequency(currentFrequency)
+    }
+  }, [currentFrequency])
+
+  const clampFrequency = (value) => {
+    if (!spectrumData?.frequencies || spectrumData.frequencies.length === 0) return Math.max(0, Math.round(value || 0))
+    const minF = Math.min(...spectrumData.frequencies)
+    const maxF = Math.max(...spectrumData.frequencies)
+    const v = Math.max(minF, Math.min(maxF, Math.round(value || 0)))
+    return v
+  }
+
+  const handleFrequencyStepAtPower = (power) => {
+    const step = Math.pow(10, power)
+    const next = clampFrequency((inputFrequency || 0) + step)
+    setInputFrequency(next)
+    if (onTuneToFrequency) onTuneToFrequency(next)
+  }
+
+  const handleFrequencyDownAtPower = (power) => {
+    const step = Math.pow(10, power)
+    const next = clampFrequency((inputFrequency || 0) - step)
+    setInputFrequency(next)
+    if (onTuneToFrequency) onTuneToFrequency(next)
+  }
+
+  const freqDigits = useMemo(() => {
+    const f = Math.max(0, Math.round(inputFrequency || 0))
+    const pad = (n, w) => n.toString().padStart(w, '0')
+    const ghz = Math.floor(f / 1e9)
+    const mhz = Math.floor((f % 1e9) / 1e6)
+    const khz = Math.floor((f % 1e6) / 1e3)
+    const hz = Math.floor(f % 1e3)
+    return { ghz, mhz: pad(mhz, 3), khz: pad(khz, 3), hz: pad(hz, 3) }
+  }, [inputFrequency])
 
   const formatFrequency = (freq) => {
     if (!freq && freq !== 0) return 'N/A'
@@ -576,12 +615,39 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
 
   return (
     <div className="spectrum-display">
-      <div className="display-header">
-        <h3>Spectrum Display</h3>
-        <div className="streaming-status">
-          <span className={`status ${streaming ? 'status-streaming' : 'status-disconnected'}`}>
-            {streaming ? 'Streaming' : 'Stopped'}
-          </span>
+      <div className="display-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+        <h3 style={{ margin: 0 }}>Spectrum Display</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div className="digit-strip" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <DigitGroup label="GHz" value={freqDigits.ghz} powers={[9]} onUp={handleFrequencyStepAtPower} onDown={handleFrequencyDownAtPower} />
+              <span style={{ opacity: 0.6 }}>.</span>
+              <DigitGroup label="MHz" value={freqDigits.mhz} powers={[8,7,6]} onUp={handleFrequencyStepAtPower} onDown={handleFrequencyDownAtPower} />
+              <span style={{ opacity: 0.6 }}>.</span>
+              <DigitGroup label="kHz" value={freqDigits.khz} powers={[5,4,3]} onUp={handleFrequencyStepAtPower} onDown={handleFrequencyDownAtPower} />
+              <span style={{ opacity: 0.6 }}>.</span>
+              <DigitGroup label="Hz" value={freqDigits.hz} powers={[2,1,0]} onUp={handleFrequencyStepAtPower} onDown={handleFrequencyDownAtPower} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label className="text-sm text-gray-300" htmlFor="header-frequency" style={{ whiteSpace: 'nowrap' }}>Frequency</label>
+              <input
+                id="header-frequency"
+                type="number"
+                value={Math.round(inputFrequency || 0)}
+                onChange={(e)=>setInputFrequency(parseFloat(e.target.value)||0)}
+                onKeyDown={(e)=>{ if (e.key === 'Enter' && onTuneToFrequency) { onTuneToFrequency(inputFrequency) } }}
+                onBlur={()=>{ if (onTuneToFrequency) { onTuneToFrequency(inputFrequency) } }}
+                className="input"
+                style={{ width: 180, padding: '4px 6px', fontSize: '12px' }}
+                step="1000"
+              />
+            </div>
+          </div>
+          <div className="streaming-status">
+            <span className={`status ${streaming ? 'status-streaming' : 'status-disconnected'}`}>
+              {streaming ? 'Streaming' : 'Stopped'}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -689,6 +755,37 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function DigitGroup({ label, value, powers, onUp, onDown }) {
+  const digits = String(value).split('')
+  return (
+    <div className="digit-group" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+      {digits.map((d, i) => (
+        <div key={`${label}-${i}`} className="digit" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <button
+            className="btn btn-secondary"
+            style={{ padding: '0 4px', lineHeight: '12px', fontSize: 10, height: 16, minWidth: 18 }}
+            onClick={() => onUp(powers[i])}
+            onMouseDown={(e) => e.preventDefault()}
+            title={`+${Math.pow(10, powers[i] || 0).toLocaleString()} Hz`}
+          >▲</button>
+          <div
+            style={{ padding: '2px 4px', fontFamily: 'monospace', fontSize: 14, minWidth: 10, textAlign: 'center' }}
+            title={`${label} digit`}
+          >{d}</div>
+          <button
+            className="btn btn-secondary"
+            style={{ padding: '0 4px', lineHeight: '12px', fontSize: 10, height: 16, minWidth: 18 }}
+            onClick={() => onDown(powers[i])}
+            onMouseDown={(e) => e.preventDefault()}
+            title={`-${Math.pow(10, powers[i] || 0).toLocaleString()} Hz`}
+          >▼</button>
+        </div>
+      ))}
+      <span style={{ fontSize: 10, opacity: 0.6, marginLeft: 4 }}>{label}</span>
     </div>
   )
 }

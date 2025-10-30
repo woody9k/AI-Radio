@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { clampFrequency, getDeviceCaps } from '../api/deviceCapabilities'
+import { getDeviceCaps } from '../api/deviceCapabilities'
 
 const Controls = ({ 
   deviceConnected, 
@@ -34,43 +34,13 @@ const Controls = ({
 
   const deviceCaps = useMemo(() => getDeviceCaps(deviceInfo || {}), [deviceInfo])
 
-  const handleFrequencyChange = (e) => {
-    const raw = parseFloat(e.target.value)
-    const value = isNaN(raw) ? 0 : raw
-    setFrequency(clampFrequency(value, deviceInfo))
-  }
+  // Frequency is now adjusted via Spectrum header controls
 
-  const handleFrequencyStepAtPower = (power) => {
-    const step = Math.pow(10, power)
-    setFrequency((f) => clampFrequency(f + step, deviceInfo))
-  }
+  // Step handlers removed
 
-  const handleFrequencyDownAtPower = (power) => {
-    const step = Math.pow(10, power)
-    setFrequency((f) => clampFrequency(f - step, deviceInfo))
-  }
+  // Removed local digit controls in favor of Spectrum header
 
-  const freqDigits = useMemo(() => {
-    const f = Math.max(0, Math.round(frequency))
-    // Build digit groups: GHz, MHz, kHz, Hz
-    const pad = (n, w) => n.toString().padStart(w, '0')
-    const ghz = Math.floor(f / 1e9)
-    const mhz = Math.floor((f % 1e9) / 1e6)
-    const khz = Math.floor((f % 1e6) / 1e3)
-    const hz = Math.floor(f % 1e3)
-    return {
-      ghz,
-      mhz: pad(mhz, 3),
-      khz: pad(khz, 3),
-      hz: pad(hz, 3),
-    }
-  }, [frequency])
-
-  const onWheelDigit = (power) => (e) => {
-    e.preventDefault()
-    if (e.deltaY < 0) handleFrequencyStepAtPower(power)
-    else handleFrequencyDownAtPower(power)
-  }
+  // Wheel digit handler removed
 
   const handleModeChange = (e) => {
     setMode(e.target.value)
@@ -145,7 +115,7 @@ const Controls = ({
   const deviceSupportsBiasT = deviceInfo?.capabilities?.bias_t || false
 
   return (
-    <div className="card" style={{ padding: '8px' }}>
+    <div className="card" style={{ padding: '8px', width: '100%', boxSizing: 'border-box' }}>
       <h3 className="text-lg font-bold mb-4">Controls</h3>
       
       <div>
@@ -161,34 +131,11 @@ const Controls = ({
               Radio Controls
             </div>
 
-            {/* Frequency (SDR# style per-digit stepper) */}
+            {/* Frequency section now controlled from Spectrum header; show info only */}
             <div className="mb-3">
               <label className="block text-sm text-gray-300 mb-1">
                 Frequency: {formatFrequency(frequency)} (range {formatFrequency(deviceCaps.minHz)} - {formatFrequency(deviceCaps.maxHz)})
               </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div className="digit-strip" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {/* GHz group */}
-                  <DigitGroup label="GHz" value={freqDigits.ghz} powers={[9]} onWheel={onWheelDigit} onUp={handleFrequencyStepAtPower} onDown={handleFrequencyDownAtPower} />
-                  <span style={{ opacity: 0.6 }}>.</span>
-                  {/* MHz group */}
-                  <DigitGroup label="MHz" value={freqDigits.mhz} powers={[8,7,6]} onWheel={onWheelDigit} onUp={handleFrequencyStepAtPower} onDown={handleFrequencyDownAtPower} />
-                  <span style={{ opacity: 0.6 }}>.</span>
-                  {/* kHz group */}
-                  <DigitGroup label="kHz" value={freqDigits.khz} powers={[5,4,3]} onWheel={onWheelDigit} onUp={handleFrequencyStepAtPower} onDown={handleFrequencyDownAtPower} />
-                  <span style={{ opacity: 0.6 }}>.</span>
-                  {/* Hz group */}
-                  <DigitGroup label="Hz" value={freqDigits.hz} powers={[2,1,0]} onWheel={onWheelDigit} onUp={handleFrequencyStepAtPower} onDown={handleFrequencyDownAtPower} />
-                </div>
-                <input
-                  type="number"
-                  value={frequency}
-                  onChange={handleFrequencyChange}
-                  className="input"
-                  style={{ width: 160, padding: '4px 6px', fontSize: '12px' }}
-                  step="1000"
-                />
-              </div>
             </div>
 
             {/* Mode + Bandwidth */}
@@ -358,36 +305,6 @@ const Controls = ({
   )
 }
 
-function DigitGroup({ label, value, powers, onWheel, onUp, onDown }) {
-  const digits = String(value).split('')
-  return (
-    <div className="digit-group" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-      {digits.map((d, i) => (
-        <div key={`${label}-${i}`} className="digit" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <button
-            className="btn btn-secondary"
-            style={{ padding: '0 4px', lineHeight: '12px', fontSize: 10, height: 16, minWidth: 18 }}
-            onClick={() => onUp(powers[i])}
-            onMouseDown={(e) => e.preventDefault()}
-            title={`+${Math.pow(10, powers[i]).toLocaleString()} Hz`}
-          >▲</button>
-          <div
-            onWheel={onWheel(powers[i])}
-            style={{ padding: '2px 4px', fontFamily: 'monospace', fontSize: 14, minWidth: 10, textAlign: 'center' }}
-            title={`${label} digit`}
-          >{d}</div>
-          <button
-            className="btn btn-secondary"
-            style={{ padding: '0 4px', lineHeight: '12px', fontSize: 10, height: 16, minWidth: 18 }}
-            onClick={() => onDown(powers[i])}
-            onMouseDown={(e) => e.preventDefault()}
-            title={`-${Math.pow(10, powers[i]).toLocaleString()} Hz`}
-          >▼</button>
-        </div>
-      ))}
-      <span style={{ fontSize: 10, opacity: 0.6, marginLeft: 4 }}>{label}</span>
-    </div>
-  )
-}
+// Local DigitGroup removed; stepper moved to Spectrum header
 
 export default Controls
