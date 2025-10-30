@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react'
 
-const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequency, currentFrequency }) => {
+const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequency, currentFrequency, currentBandwidth, onListenToSignal, onBookmarkSignal }) => {
   const canvasRef = useRef(null)
   const waterfallRef = useRef(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 400 })
@@ -8,6 +8,21 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
   const [dragStart, setDragStart] = useState(null)
   const [dragEnd, setDragEnd] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [viewRange, setViewRange] = useState({ start: 0, end: 1 }) // fraction [0..1]
+  const [panning, setPanning] = useState(false)
+  // Spectrum scaling/smoothing
+  const [autoScale, setAutoScale] = useState(true)
+  const [userMinDb, setUserMinDb] = useState(-120)
+  const [userMaxDb, setUserMaxDb] = useState(0)
+  const [smoothEnabled, setSmoothEnabled] = useState(false)
+  const [smoothAlpha, setSmoothAlpha] = useState(0.5)
+  const prevSliceRef = useRef(null)
+  const lastRetuneRef = useRef(0)
+  // Waterfall polish
+  const [waterfallPaused, setWaterfallPaused] = useState(false)
+  const [waterfallColormap, setWaterfallColormap] = useState('viridis')
+  const [waterfallBrightness, setWaterfallBrightness] = useState(1.0)
+  const [waterfallContrast, setWaterfallContrast] = useState(1.0)
 
   useEffect(() => {
     const updateDimensions = () => {
@@ -60,11 +75,22 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
     
-    setDragStart({ x, y })
-    setIsDragging(true)
+    if (e.button === 2 || e.shiftKey) {
+      setPanning(true)
+      setDragStart({ x, y })
+    } else {
+      setDragStart({ x, y })
+      setIsDragging(true)
+    }
   }
 
   const handleMouseUp = (e) => {
+    if (panning) {
+      setPanning(false)
+      setDragStart(null)
+      setDragEnd(null)
+      return
+    }
     if (!isDragging || !dragStart || !spectrumData) return
     
     const rect = canvasRef.current.getBoundingClientRect()
@@ -72,19 +98,54 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
     
     const width = rect.width
     const frequencies = spectrumData.frequencies
+    const spectrum = spectrumData.spectrum || []
+    const startIdx = Math.floor(viewRange.start * (frequencies.length - 1))
+    const endIdx = Math.floor(viewRange.end * (frequencies.length - 1))
+    const length = Math.max(2, endIdx - startIdx + 1)
     
     if (Math.abs(x - dragStart.x) < 5) {
-      // Single click - tune to frequency
-      const freqIndex = Math.floor((dragStart.x / width) * frequencies.length)
-      const targetFreq = frequencies[freqIndex]
-      
-      if (onTuneToFrequency) {
-        onTuneToFrequency(targetFreq)
+      // Single click
+      // If clicked near a signal marker, act on marker
+      const visMinF = frequencies[startIdx]
+      const visMaxF = frequencies[endIdx]
+      let closest = null
+      let minDist = Infinity
+      const minPower = Math.min(...spectrum.slice(startIdx, endIdx + 1))
+      const maxPower = Math.max(...spectrum.slice(startIdx, endIdx + 1))
+      const powerRange = (maxPower - minPower) || 1
+      if (spectrumData.signals) {
+        spectrumData.signals.forEach((sig) => {
+          if (sig.frequency < visMinF || sig.frequency > visMaxF) return
+          let si = startIdx
+          for (let i = startIdx + 1; i <= endIdx; i++) { if (frequencies[i] >= sig.frequency) { si = i; break } }
+          const px = ((si - startIdx) / (length - 1)) * width
+          const normP = ((sig.power ?? minPower) - minPower) / powerRange
+          const py = rect.height - (normP * rect.height * 0.9) - rect.height * 0.05
+          const dx = dragStart.x - px
+          const dy = dragStart.y - py
+          const d2 = dx*dx + dy*dy
+          if (d2 < minDist) { minDist = d2; closest = sig }
+        })
+      }
+      const hitRadius2 = 10 * 10
+      if (closest && minDist <= hitRadius2) {
+        // Shift-click to bookmark; Alt or Ctrl to listen; default to tune
+        if (e.shiftKey && onBookmarkSignal) onBookmarkSignal(closest)
+        else if ((e.altKey || e.ctrlKey) && onListenToSignal) onListenToSignal(closest)
+        else if (onTuneToFrequency) onTuneToFrequency(closest.frequency, closest.bandwidth)
+      } else {
+        const rel = dragStart.x / width
+        const idx = startIdx + Math.floor(rel * Math.max(1, endIdx - startIdx))
+        const freqIndex = Math.min(frequencies.length - 1, Math.max(0, idx))
+        const targetFreq = frequencies[freqIndex]
+        if (onTuneToFrequency) onTuneToFrequency(targetFreq)
       }
     } else {
       // Drag - select bandwidth and tune to center
-      const startIndex = Math.floor((Math.min(dragStart.x, x) / width) * frequencies.length)
-      const endIndex = Math.floor((Math.max(dragStart.x, x) / width) * frequencies.length)
+      const sx = Math.min(dragStart.x, x)
+      const ex = Math.max(dragStart.x, x)
+      const startIndex = startIdx + Math.floor((sx / width) * Math.max(1, endIdx - startIdx))
+      const endIndex = startIdx + Math.floor((ex / width) * Math.max(1, endIdx - startIdx))
       
       const startFreq = frequencies[startIndex]
       const endFreq = frequencies[endIndex]
@@ -109,16 +170,94 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       setDragEnd(null)
       setIsDragging(false)
     }
+    if (panning) {
+      setPanning(false)
+      setDragStart(null)
+      setDragEnd(null)
+    }
   }
 
   // click handling occurs via mouse events above
 
+  // Prevent context menu on right-drag pan
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const handler = (e) => e.preventDefault()
+    canvas.addEventListener('contextmenu', handler)
+    return () => canvas.removeEventListener('contextmenu', handler)
+  }, [])
+
+  // Wheel zoom around cursor
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const onWheel = (e) => {
+      if (!spectrumData || !spectrumData.frequencies) return
+      e.preventDefault()
+      const rect = canvas.getBoundingClientRect()
+      const cursor = (e.clientX - rect.left) / rect.width
+      const zoomFactor = e.ctrlKey ? 0.85 : 0.9
+      const expand = e.deltaY < 0 ? zoomFactor : 1 / zoomFactor
+      const range = viewRange.end - viewRange.start
+      const newRange = Math.min(1, Math.max(0.001, range * expand))
+      const center = viewRange.start + range * cursor
+      let start = center - newRange * cursor
+      let end = start + newRange
+      if (start < 0) { end -= start; start = 0 }
+      if (end > 1) { const over = end - 1; start -= over; end = 1; if (start < 0) start = 0 }
+      setViewRange({ start, end })
+    }
+    canvas.addEventListener('wheel', onWheel, { passive: false })
+    return () => canvas.removeEventListener('wheel', onWheel)
+  }, [viewRange, spectrumData])
+
+  // Right/Shift drag pan
+  useEffect(() => {
+    if (!panning || !dragStart || !canvasRef.current) return
+    const onMove = (e) => {
+      const rect = canvasRef.current.getBoundingClientRect()
+      const dx = (e.clientX - rect.left - dragStart.x) / rect.width
+      const range = viewRange.end - viewRange.start
+      let start = viewRange.start - dx
+      let end = start + range
+      if (start < 0) { end -= start; start = 0 }
+      if (end > 1) { const over = end - 1; start -= over; end = 1; if (start < 0) start = 0 }
+      setViewRange({ start, end })
+      setDragEnd({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+
+      // Edge retune: if near edges, retune to center of current view
+      const now = Date.now()
+      const shouldRetune = (start < 0.03 || end > 0.97) && (now - lastRetuneRef.current > 700)
+      if (shouldRetune && spectrumData && spectrumData.frequencies && onTuneToFrequency) {
+        const freqs = spectrumData.frequencies
+        const startIdx = Math.floor(Math.max(0, Math.min(1, start)) * (freqs.length - 1))
+        const endIdx = Math.floor(Math.max(0, Math.min(1, end)) * (freqs.length - 1))
+        const centerIdx = Math.floor((startIdx + endIdx) / 2)
+        const target = freqs[Math.max(0, Math.min(freqs.length - 1, centerIdx))]
+        lastRetuneRef.current = now
+        onTuneToFrequency(target)
+        // Recenter view around 0.5 to keep span after retune
+        const newStart = Math.max(0, 0.5 - range / 2)
+        const newEnd = Math.min(1, 0.5 + range / 2)
+        setViewRange({ start: newStart, end: newEnd })
+      }
+    }
+    const onUp = () => { setPanning(false); setDragStart(null); setDragEnd(null) }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp, { once: true })
+    return () => { window.removeEventListener('mousemove', onMove) }
+  }, [panning, dragStart, viewRange])
+
+  const spectrumRafRef = useRef(0)
   useEffect(() => {
     if (!spectrumData || !canvasRef.current) return
 
-    const canvas = canvasRef.current
-    const ctx = canvas.getContext('2d')
-    const { width, height } = dimensions
+    const draw = () => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const ctx = canvas.getContext('2d')
+      const { width, height } = dimensions
 
     // Theme colors from CSS variables
     const styles = getComputedStyle(document.documentElement)
@@ -157,23 +296,38 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       ctx.stroke()
     }
 
-    // Draw spectrum
+    // Draw spectrum (slice by viewRange)
     if (spectrumData.spectrum && spectrumData.frequencies) {
       const spectrum = spectrumData.spectrum
       const frequencies = spectrumData.frequencies
+      const startIdx = Math.floor(viewRange.start * (spectrum.length - 1))
+      const endIdx = Math.floor(viewRange.end * (spectrum.length - 1))
+      const length = Math.max(2, endIdx - startIdx + 1)
       
       // Normalize spectrum to canvas height
-      const minPower = Math.min(...spectrum)
-      const maxPower = Math.max(...spectrum)
-      const powerRange = maxPower - minPower
+      let slice = spectrum.slice(startIdx, endIdx + 1)
+      if (smoothEnabled) {
+        const prev = prevSliceRef.current
+        if (prev && prev.length === slice.length) {
+          slice = slice.map((v, i) => smoothAlpha * v + (1 - smoothAlpha) * prev[i])
+        }
+        prevSliceRef.current = slice
+      } else {
+        prevSliceRef.current = slice
+      }
+      const autoMin = Math.min(...slice)
+      const autoMax = Math.max(...slice)
+      const minPower = autoScale ? autoMin : userMinDb
+      const maxPower = autoScale ? autoMax : userMaxDb
+      const powerRange = (maxPower - minPower) || 1
 
       ctx.strokeStyle = colorSpectrum.trim()
       ctx.lineWidth = 2
       ctx.beginPath()
 
-      for (let i = 0; i < spectrum.length; i++) {
-        const x = (i / (spectrum.length - 1)) * width
-        const normalizedPower = (spectrum[i] - minPower) / powerRange
+      for (let i = 0; i < length; i++) {
+        const x = (i / (length - 1)) * width
+        const normalizedPower = (slice[i] - minPower) / powerRange
         const y = height - (normalizedPower * height * 0.9) - height * 0.05
 
         if (i === 0) {
@@ -187,16 +341,13 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       // Tuned frequency marker (vertical line)
       if (typeof currentFrequency === 'number') {
         // Find nearest index for the tuned frequency
-        const minF = frequencies[0]
-        const maxF = frequencies[frequencies.length - 1]
+        const minF = frequencies[startIdx]
+        const maxF = frequencies[endIdx]
         if (currentFrequency >= minF && currentFrequency <= maxF) {
           // Compute x position by nearest index
-          let idx = 0
-          // binary search for efficiency could be added; linear is fine for now
-          for (let i = 1; i < frequencies.length; i++) {
-            if (frequencies[i] >= currentFrequency) { idx = i; break }
-          }
-          const x = (idx / (frequencies.length - 1)) * width
+          let idx = startIdx
+          for (let i = startIdx + 1; i <= endIdx; i++) { if (frequencies[i] >= currentFrequency) { idx = i; break } }
+          const x = ((idx - startIdx) / (length - 1)) * width
           // Vertical line
           ctx.strokeStyle = colorAccent.trim()
           ctx.setLineDash([4, 4])
@@ -213,19 +364,44 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
           const label = `Tune: ${formatFrequency(currentFrequency)}`
           const labelWidth = ctx.measureText(label).width
           ctx.fillText(label, Math.min(Math.max(4, x - labelWidth / 2), width - labelWidth - 4), 18)
+
+          // Outer tuning width indicators (three-line indicator)
+          if (typeof currentBandwidth === 'number' && currentBandwidth > 0) {
+            const half = currentBandwidth / 2
+            const leftTarget = currentFrequency - half
+            const rightTarget = currentFrequency + half
+            // Find nearest indices for left/right within overall frequencies
+            let li = startIdx
+            for (let i = startIdx + 1; i <= endIdx; i++) { if (frequencies[i] >= leftTarget) { li = i; break } }
+            let ri = endIdx
+            for (let i = li; i <= endIdx; i++) { if (frequencies[i] >= rightTarget) { ri = i; break } }
+            const lx = ((li - startIdx) / (length - 1)) * width
+            const rx = ((ri - startIdx) / (length - 1)) * width
+
+            // Draw left/right lines
+            ctx.strokeStyle = colorAccent.trim()
+            ctx.lineWidth = 2
+            ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, height); ctx.stroke()
+            ctx.beginPath(); ctx.moveTo(rx, 0); ctx.lineTo(rx, height); ctx.stroke()
+
+            // Fill between edges
+            ctx.fillStyle = 'rgba(59, 130, 246, 0.08)'
+            ctx.fillRect(Math.min(lx, rx), 0, Math.abs(rx - lx), height)
+          }
         }
       }
 
       // Draw detected signals
       if (spectrumData.signals) {
+        const visMinF = frequencies[startIdx]
+        const visMaxF = frequencies[endIdx]
         spectrumData.signals.forEach((signal) => {
-          const signalIndex = frequencies.findIndex(f => 
-            Math.abs(f - (signal.frequency - frequencies[0])) < 1000
-          )
-          
+          if (signal.frequency < visMinF || signal.frequency > visMaxF) return
+          let signalIndex = startIdx
+          for (let i = startIdx + 1; i <= endIdx; i++) { if (frequencies[i] >= signal.frequency) { signalIndex = i; break } }
           if (signalIndex !== -1) {
-            const x = (signalIndex / (frequencies.length - 1)) * width
-            const normalizedPower = (signal.power - minPower) / powerRange
+            const x = ((signalIndex - startIdx) / (length - 1)) * width
+            const normalizedPower = ((signal.power ?? minPower) - minPower) / powerRange
             const y = height - (normalizedPower * height * 0.9) - height * 0.05
 
             // Draw signal marker
@@ -271,6 +447,12 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
           }
         }
       }
+
+      // Draw power scale using current view's min/max
+      ctx.fillStyle = colorMuted.trim()
+      ctx.font = '12px Arial'
+      ctx.fillText(`${maxPower.toFixed(0)} dB`, 10, 35)
+      ctx.fillText(`${minPower.toFixed(0)} dB`, 10, height - 40)
     }
 
     // Draw drag selection box
@@ -330,21 +512,16 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
     ctx.font = '11px Arial'
     ctx.fillText('Click to tune | Drag to select bandwidth', 10, height - 25)
 
-    // Draw power scale
-    if (spectrumData.spectrum) {
-      const minPower = Math.min(...spectrumData.spectrum)
-      const maxPower = Math.max(...spectrumData.spectrum)
-      
-      ctx.fillStyle = colorMuted.trim()
-      ctx.font = '12px Arial'
-      ctx.fillText(`${maxPower.toFixed(0)} dB`, 10, 35)
-      ctx.fillText(`${minPower.toFixed(0)} dB`, 10, height - 40)
     }
 
-  }, [spectrumData, dimensions, mousePos, dragStart, dragEnd, isDragging])
+    cancelAnimationFrame(spectrumRafRef.current)
+    spectrumRafRef.current = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(spectrumRafRef.current)
+  }, [spectrumData, dimensions, mousePos, dragStart, dragEnd, isDragging, viewRange, autoScale, userMinDb, userMaxDb, smoothEnabled, smoothAlpha])
 
   useEffect(() => {
     if (!waterfallData || !waterfallRef.current) return
+    if (waterfallPaused) return
 
     const canvas = waterfallRef.current
     const ctx = canvas.getContext('2d')
@@ -366,12 +543,23 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
           const waterfallX = Math.floor((x / width) * waterfallData.data[0].length)
           
           if (waterfallY < waterfallData.data.length && waterfallX < waterfallData.data[0].length) {
-            const intensity = waterfallData.data[waterfallY][waterfallX] / 255
-            
-            // Color mapping (blue to red)
-            const r = Math.floor(intensity * 255)
-            const g = Math.floor(intensity * 128)
-            const b = Math.floor((1 - intensity) * 255)
+            let intensity = waterfallData.data[waterfallY][waterfallX] / 255
+            // Apply contrast/brightness
+            intensity = Math.min(1, Math.max(0, ((intensity - 0.5) * waterfallContrast + 0.5) * waterfallBrightness))
+            let r=0,g=0,b=0
+            if (waterfallColormap === 'grayscale') {
+              const v = Math.floor(intensity * 255)
+              r = v; g = v; b = v
+            } else if (waterfallColormap === 'fire') {
+              r = Math.floor(255 * Math.min(1, intensity * 1.5))
+              g = Math.floor(255 * Math.min(1, Math.max(0, (intensity - 0.3) * 1.2)))
+              b = Math.floor(255 * Math.max(0, intensity - 0.6))
+            } else {
+              const t = intensity
+              r = Math.floor(255 * Math.min(1, Math.max(0, -0.5 + 4.0*t - 4.0*t*t)))
+              g = Math.floor(255 * Math.min(1, Math.max(0, 1.5 - 4.0*Math.abs(t-0.5))))
+              b = Math.floor(255 * Math.min(1, Math.max(0, 1.0 - 4.0*(t-0.75)*(t-0.75))))
+            }
             
             data[dataIndex] = r     // Red
             data[dataIndex + 1] = g // Green
@@ -384,7 +572,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       ctx.putImageData(imageData, 0, 0)
     }
 
-  }, [waterfallData, dimensions])
+  }, [waterfallData, dimensions, waterfallPaused, waterfallColormap, waterfallBrightness, waterfallContrast])
 
   return (
     <div className="spectrum-display">
@@ -415,6 +603,25 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
         {/* Waterfall Display */}
         <div className="waterfall-display">
           <h4 className="text-sm text-gray-300 mb-2">Waterfall</h4>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+            <label className="text-xs">
+              Colormap
+              <select value={waterfallColormap} onChange={(e)=>setWaterfallColormap(e.target.value)} className="input" style={{ marginLeft: 6, padding: '2px 4px' }}>
+                <option value="viridis">Viridis</option>
+                <option value="fire">Fire</option>
+                <option value="grayscale">Grayscale</option>
+              </select>
+            </label>
+            <label className="text-xs">
+              Brightness
+              <input type="range" min="0.5" max="2" step="0.05" value={waterfallBrightness} onChange={(e)=>setWaterfallBrightness(parseFloat(e.target.value))} style={{ width: 100, marginLeft: 6 }} />
+            </label>
+            <label className="text-xs">
+              Contrast
+              <input type="range" min="0.5" max="2" step="0.05" value={waterfallContrast} onChange={(e)=>setWaterfallContrast(parseFloat(e.target.value))} style={{ width: 100, marginLeft: 6 }} />
+            </label>
+            <button className="btn btn-secondary" onClick={()=>setWaterfallPaused(v=>!v)} style={{ padding: '4px 8px' }}>{waterfallPaused ? 'Resume' : 'Pause'}</button>
+          </div>
           <canvas
             ref={waterfallRef}
             width={dimensions.width}
@@ -455,6 +662,29 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
               <span className="text-white ml-2">
                 {new Date(spectrumData.timestamp).toLocaleTimeString()}
               </span>
+            </div>
+            <div className="flex items-center gap-2" style={{ marginTop: 8 }}>
+              <label className="text-gray-300 text-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input type="checkbox" checked={autoScale} onChange={(e)=>setAutoScale(e.target.checked)} /> Autoscale
+              </label>
+              {!autoScale && (
+                <>
+                  <label className="text-gray-300 text-sm">Min dB
+                    <input type="number" value={userMinDb} onChange={(e)=>setUserMinDb(parseFloat(e.target.value)||-120)} className="input" style={{ width: 70, marginLeft: 6, padding: '2px 4px' }} />
+                  </label>
+                  <label className="text-gray-300 text-sm">Max dB
+                    <input type="number" value={userMaxDb} onChange={(e)=>setUserMaxDb(parseFloat(e.target.value)||0)} className="input" style={{ width: 70, marginLeft: 6, padding: '2px 4px' }} />
+                  </label>
+                </>
+              )}
+              <label className="text-gray-300 text-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input type="checkbox" checked={smoothEnabled} onChange={(e)=>setSmoothEnabled(e.target.checked)} /> Smooth
+              </label>
+              {smoothEnabled && (
+                <label className="text-gray-300 text-sm">Alpha
+                  <input type="range" min="0.1" max="0.9" step="0.05" value={smoothAlpha} onChange={(e)=>setSmoothAlpha(parseFloat(e.target.value))} style={{ width: 100, marginLeft: 6 }} />
+                </label>
+              )}
             </div>
           </div>
         </div>

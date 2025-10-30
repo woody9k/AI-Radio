@@ -163,7 +163,7 @@ class SDRDevice:
         if mode not in valid_modes:
             logger.warning(f"Invalid mode: {mode}, must be one of {valid_modes}")
             return False
-        
+
         self.mode = mode
         logger.debug(f"Mode set to {mode}")
         return True
@@ -174,13 +174,13 @@ class SDRDevice:
         if enabled and isinstance(self.gain, (int, float)):
             # When AGC is enabled, we typically use auto gain
             # Store the manual gain value for when AGC is disabled
-            if not hasattr(self, '_manual_gain'):
+            if not hasattr(self, "_manual_gain"):
                 self._manual_gain = self.gain
             self.set_gain("auto")
-        elif not enabled and hasattr(self, '_manual_gain'):
+        elif not enabled and hasattr(self, "_manual_gain"):
             # Restore manual gain when disabling AGC
             self.set_gain(self._manual_gain)
-        
+
         logger.debug(f"AGC {'enabled' if enabled else 'disabled'}")
         return True
 
@@ -197,7 +197,7 @@ class SDRDevice:
 
         try:
             # RTL-SDR Blog V4 has bias-T support via set_bias_tee
-            if hasattr(self.sdr, 'set_bias_tee'):
+            if hasattr(self.sdr, "set_bias_tee"):
                 self.sdr.set_bias_tee(enabled)
                 self.bias_t = enabled
                 logger.debug(f"Bias-T {'enabled' if enabled else 'disabled'}")
@@ -214,15 +214,12 @@ class SDRDevice:
         if not self.sdr:
             return
 
-        self.device_capabilities = {
-            "bias_t": False,
-            "device_type": "unknown"
-        }
+        self.device_capabilities = {"bias_t": False, "device_type": "unknown"}
 
         try:
             # Check for RTL-SDR Blog V4 (has bias-T support)
             # We can detect this by checking if set_bias_tee method exists
-            if hasattr(self.sdr, 'set_bias_tee'):
+            if hasattr(self.sdr, "set_bias_tee"):
                 self.device_capabilities["bias_t"] = True
                 self.device_capabilities["device_type"] = "rtl_blog_v4"
                 logger.info("RTL-SDR Blog V4 detected - bias-T supported")
@@ -288,7 +285,7 @@ class SDRDevice:
                     # Add to queue for processing
                     try:
                         self.sample_queue.put_nowait(samples)
-                    except:
+                    except Exception:
                         # Queue full, skip this sample
                         pass
 
@@ -358,7 +355,7 @@ class SDRManager:
                 sdr = RtlSdr(device_index=i)
                 sdr.close()
                 available.append(i)
-            except:
+            except Exception:
                 continue
 
         self.available_devices = available

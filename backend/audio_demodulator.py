@@ -36,7 +36,10 @@ class AudioDemodulator:
         self._design_filters()
 
         logger.info(
-            f"Audio demodulator initialized: {sample_rate}Hz -> {audio_rate}Hz (decimation: {self.decimation})"
+            "Audio demodulator initialized: %sHz -> %sHz (decimation: %s)",
+            sample_rate,
+            audio_rate,
+            self.decimation,
         )
 
     def _design_filters(self):
@@ -163,10 +166,10 @@ class AudioDemodulator:
     def demodulate_ssb(self, iq_samples: np.ndarray) -> np.ndarray:
         """
         Demodulate SSB (Single Side Band) signal.
-        
+
         Args:
             iq_samples: Complex IQ samples from SDR
-            
+
         Returns:
             Audio samples as float32 array (normalized -1 to 1)
         """
@@ -174,23 +177,23 @@ class AudioDemodulator:
             # SSB demodulation: use the real part for USB, imaginary for LSB
             # For now, assume USB (Upper Side Band) - take real part
             audio = np.real(iq_samples)
-            
+
             # Remove DC component
             audio = audio - np.mean(audio)
-            
+
             # Decimate to audio rate
             audio = scipy_signal.decimate(audio, self.decimation, ftype="iir", zero_phase=True)
-            
+
             # Low-pass filter
             audio = scipy_signal.sosfilt(self.audio_lpf, audio)
-            
+
             # Normalize to -1 to 1 range
             max_val = np.max(np.abs(audio))
             if max_val > 0:
                 audio = audio / max_val * 0.95  # Leave headroom
-                
+
             return audio.astype(np.float32)
-            
+
         except Exception as e:
             logger.error(f"Error in SSB demodulation: {e}")
             return np.zeros(len(iq_samples) // self.decimation, dtype=np.float32)

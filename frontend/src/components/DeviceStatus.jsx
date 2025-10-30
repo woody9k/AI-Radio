@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { getDeviceCaps } from '../api/deviceCapabilities'
 
 const DeviceStatus = ({ deviceConnected, deviceInfo, onConnect, onDisconnect }) => {
   const [devices, setDevices] = useState([])
@@ -90,6 +91,11 @@ const DeviceStatus = ({ deviceConnected, deviceInfo, onConnect, onDisconnect }) 
             >
               Disconnect
             </button>
+          </div>
+          <div className="mb-3 text-sm text-gray-300">
+            {(() => { const caps = getDeviceCaps(deviceInfo || {}); return (
+              <span>Device Range: {formatFrequency(caps.minHz)} - {formatFrequency(caps.maxHz)}</span>
+            )})()}
           </div>
           
           {deviceInfo && (

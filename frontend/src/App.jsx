@@ -12,7 +12,6 @@ import './App.css'
 import { getAISettings } from './api/aiClient'
 
 function App() {
-  const [socket, setSocket] = useState(null)
   const [connected, setConnected] = useState(false)
   const [deviceConnected, setDeviceConnected] = useState(false)
   const [streaming, setStreaming] = useState(false)
@@ -20,7 +19,8 @@ function App() {
   const [waterfallData, setWaterfallData] = useState(null)
   const [deviceInfo, setDeviceInfo] = useState(null)
   const [aiDetections, setAiDetections] = useState([])
-  const [viewMode, setViewMode] = useState('beginner') // 'beginner' or 'advanced'
+  const [bookmarks, setBookmarks] = useState([])
+  const [viewMode] = useState('beginner') // 'beginner' or 'advanced'
   const [activePane, setActivePane] = useState('radio') // 'radio' | 'chat' | 'settings' | 'analysis'
   const refreshingDevicesRef = useRef(false)
 
@@ -81,7 +81,7 @@ function App() {
       setStreaming(false)
     })
 
-    setSocket(newSocket)
+    // no-op: we don't persist the socket in state
 
     // Health check every 5 seconds to detect backend restart (debounced)
     const healthCheckInterval = setInterval(async () => {
@@ -266,6 +266,14 @@ function App() {
     }
   }
 
+  const bookmarkSignal = (signal) => {
+    setBookmarks(prev => {
+      const key = `${Math.round(signal.frequency)}-${signal.bandwidth || 0}`
+      if (prev.find(b => b.key === key)) return prev
+      return [{ key, ...signal, savedAt: Date.now() }, ...prev].slice(0, 50)
+    })
+  }
+
   return (
     <div className="app">
       <header className="app-header">
@@ -274,6 +282,7 @@ function App() {
           <span className={`status ${connected ? 'status-connected' : 'status-disconnected'}`}>
             {connected ? 'Connected' : 'Disconnected'}
           </span>
+          <span style={{ marginLeft: 12, fontSize: 12, opacity: 0.8 }}>Bookmarks: {bookmarks.length}</span>
         </div>
       </header>
 
@@ -332,6 +341,9 @@ function App() {
             streaming={streaming}
             onTuneToFrequency={tuneToFrequency}
             currentFrequency={deviceInfo?.frequency}
+            currentBandwidth={deviceInfo?.bandwidth}
+            onListenToSignal={listenToSignal}
+            onBookmarkSignal={bookmarkSignal}
           />
           <SMeter spectrumData={spectrumData} tunedFrequency={deviceInfo?.frequency} />
 

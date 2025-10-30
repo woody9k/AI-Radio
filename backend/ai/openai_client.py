@@ -35,7 +35,6 @@ class OpenAIClient:
             {"role": "user", "content": user_text},
         ]
 
-        last_err: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
                 create = cast(Any, client.chat.completions.create)
@@ -52,8 +51,7 @@ class OpenAIClient:
 
                 parsed = json.loads(text)
                 return parsed
-            except Exception as e:
-                last_err = e
+            except Exception:
                 if attempt < self.max_retries:
                     time.sleep(0.5 * (attempt + 1))
                     continue

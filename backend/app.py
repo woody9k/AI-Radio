@@ -9,6 +9,7 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import datetime
 
@@ -228,6 +229,142 @@ def disconnect_device(device_index):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+def _settings_get_payload(device: SDRDevice) -> dict:
+    device_info = device.get_device_info()
+    return {
+        "success": True,
+        "settings": {
+            "frequency": device_info.get("frequency", 0),
+            "sample_rate": device_info.get("sample_rate", 0),
+            "gain": device_info.get("gain", "auto"),
+            "bandwidth": device_info.get("bandwidth"),
+            "mode": device_info.get("mode", "WFM"),
+            "agc_enabled": device_info.get("agc_enabled", False),
+            "bias_t": device_info.get("bias_t", False),
+            "capabilities": device_info.get("capabilities", {}),
+        },
+    }
+
+
+SettingOp = tuple[str, Callable[[], bool | None]]
+
+
+def _op_frequency(device: SDRDevice, data: dict) -> list[SettingOp]:
+    if "frequency" not in data:
+        return []
+    freq = float(data["frequency"])
+    return [("Failed to set frequency", lambda: device.set_frequency(freq))]
+
+
+def _op_sample_rate(device: SDRDevice, data: dict) -> list[SettingOp]:
+    if "sample_rate" not in data:
+        return []
+    sr = float(data["sample_rate"])
+
+    def set_sr() -> bool:
+        ok = device.set_sample_rate(sr)
+        if ok:
+            signal_processor.set_sample_rate(sr)
+        return bool(ok)
+
+    return [("Failed to set sample rate", set_sr)]
+
+
+def _op_gain(device: SDRDevice, data: dict) -> list[SettingOp]:
+    if "gain" not in data:
+        return []
+    g = data["gain"]
+    return [("Failed to set gain", lambda: device.set_gain(g))]
+
+
+def _op_bandwidth(device: SDRDevice, data: dict) -> list[SettingOp]:
+    if not data.get("bandwidth"):
+        return []
+    bw = float(data["bandwidth"])
+    return [("Failed to set bandwidth", lambda: device.set_bandwidth(bw))]
+
+
+def _op_mode(device: SDRDevice, data: dict) -> list[SettingOp]:
+    if "mode" not in data:
+        return []
+    m = data["mode"]
+
+    def set_mode() -> bool:
+        ok = device.set_mode(m)
+        if ok:
+            audio_demodulator.set_mode(m)
+        return bool(ok)
+
+    return [("Failed to set mode", set_mode)]
+
+
+def _op_agc(device: SDRDevice, data: dict) -> list[SettingOp]:
+    if "agc_enabled" not in data:
+        return []
+    agc = bool(data["agc_enabled"])
+    return [("Failed to set AGC", lambda: device.set_agc(agc))]
+
+
+def _op_bias_t(device: SDRDevice, data: dict) -> list[SettingOp]:
+    if "bias_t" not in data:
+        return []
+    bt = bool(data["bias_t"])
+
+    def set_bias() -> bool:
+        ok = device.set_bias_t(bt)
+        # If unsupported, treat as no-op without error
+        return bool(ok or not device.device_capabilities.get("bias_t", False))
+
+    return [("Failed to set bias-T", set_bias)]
+
+
+def _op_squelch(device: SDRDevice, data: dict) -> list[SettingOp]:
+    if ("squelch_threshold" not in data) and ("squelch_enabled" not in data):
+        return []
+    th = float(data.get("squelch_threshold", audio_demodulator.squelch_threshold))
+    en = bool(data.get("squelch_enabled", audio_demodulator.squelch_enabled))
+
+    def set_squelch() -> bool:
+        audio_demodulator.set_squelch(th, en)
+        return True
+
+    return [("Failed to set squelch", set_squelch)]
+
+
+def _build_setting_ops(device: SDRDevice, data: dict) -> list[SettingOp]:
+    ops: list[SettingOp] = []
+    ops += _op_frequency(device, data)
+    ops += _op_sample_rate(device, data)
+    ops += _op_gain(device, data)
+    ops += _op_bandwidth(device, data)
+    ops += _op_mode(device, data)
+    ops += _op_agc(device, data)
+    ops += _op_bias_t(device, data)
+    ops += _op_squelch(device, data)
+    return ops
+
+
+def _apply_settings_post(device: SDRDevice, data: dict) -> tuple[bool, list[str]]:
+    def try_call(label: str, func: Callable[[], bool | None]) -> tuple[bool, str | None]:
+        try:
+            ok = func()
+            return (True if ok is None else bool(ok)), None
+        except Exception as exc:  # narrow handlers live inside device methods
+            return False, f"{label}: {exc}"
+
+    operations = _build_setting_ops(device, data)
+
+    success = True
+    errors: list[str] = []
+    for label, fn in operations:
+        ok, err = try_call(label, fn)
+        if not ok:
+            success = False
+            errors.append(label if err is None else err)
+
+    return success, errors
+
+
 @app.route("/api/settings", methods=["GET", "POST"])
 def handle_settings():
     """Get or update SDR settings."""
@@ -238,96 +375,20 @@ def handle_settings():
 
     if request.method == "GET":
         try:
-            device_info = current_device.get_device_info()
-            return jsonify(
-                {
-                    "success": True,
-                    "settings": {
-                        "frequency": device_info.get("frequency", 0),
-                        "sample_rate": device_info.get("sample_rate", 0),
-                        "gain": device_info.get("gain", "auto"),
-                        "bandwidth": device_info.get("bandwidth"),
-                        "mode": device_info.get("mode", "WFM"),
-                        "agc_enabled": device_info.get("agc_enabled", False),
-                        "bias_t": device_info.get("bias_t", False),
-                        "capabilities": device_info.get("capabilities", {}),
-                    },
-                }
-            )
+            return jsonify(_settings_get_payload(current_device))
         except Exception as e:
             logger.error(f"Error getting settings: {e}")
             return jsonify({"success": False, "error": str(e)}), 500
 
-    elif request.method == "POST":
-        try:
-            data = request.get_json()
-            success = True
-            errors = []
-
-            # Update frequency
-            if "frequency" in data:
-                if not current_device.set_frequency(float(data["frequency"])):
-                    success = False
-                    errors.append("Failed to set frequency")
-
-            # Update sample rate
-            if "sample_rate" in data:
-                if not current_device.set_sample_rate(float(data["sample_rate"])):
-                    success = False
-                    errors.append("Failed to set sample rate")
-                else:
-                    # Update signal processor sample rate
-                    signal_processor.set_sample_rate(float(data["sample_rate"]))
-
-            # Update gain
-            if "gain" in data:
-                if not current_device.set_gain(data["gain"]):
-                    success = False
-                    errors.append("Failed to set gain")
-
-            # Update bandwidth
-            if "bandwidth" in data and data["bandwidth"]:
-                if not current_device.set_bandwidth(float(data["bandwidth"])):
-                    success = False
-                    errors.append("Failed to set bandwidth")
-
-            # Update mode
-            if "mode" in data:
-                if not current_device.set_mode(data["mode"]):
-                    success = False
-                    errors.append("Failed to set mode")
-                else:
-                    # Update audio demodulator mode
-                    audio_demodulator.set_mode(data["mode"])
-
-            # Update AGC
-            if "agc_enabled" in data:
-                if not current_device.set_agc(bool(data["agc_enabled"])):
-                    success = False
-                    errors.append("Failed to set AGC")
-
-            # Update bias-T
-            if "bias_t" in data:
-                if not current_device.set_bias_t(bool(data["bias_t"])):
-                    # Don't fail if bias-T is not supported, just log warning
-                    if current_device.device_capabilities.get("bias_t", False):
-                        success = False
-                        errors.append("Failed to set bias-T")
-
-            # Update squelch (audio demodulator setting)
-            if "squelch_threshold" in data or "squelch_enabled" in data:
-                threshold = data.get("squelch_threshold", audio_demodulator.squelch_threshold)
-                enabled = data.get("squelch_enabled", audio_demodulator.squelch_enabled)
-                audio_demodulator.set_squelch(float(threshold), bool(enabled))
-
-            if success:
-                return jsonify({"success": True, "settings": current_device.get_device_info()})
-            else:
-                return jsonify({"success": False, "errors": errors}), 400
-
-        except Exception as e:
-            logger.error(f"Error updating settings: {e}")
-            return jsonify({"success": False, "error": str(e)}), 500
+    try:
+        data = request.get_json() or {}
+        success, errors = _apply_settings_post(current_device, data)
+        if success:
+            return jsonify({"success": True, "settings": current_device.get_device_info()})
+        return jsonify({"success": False, "errors": errors}), 400
+    except Exception as e:
+        logger.error(f"Error updating settings: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/api/stream/start", methods=["POST"])
@@ -843,9 +904,84 @@ def audio_worker():
     logger.info("Audio worker stopped")
 
 
+def _process_stream_iteration() -> bool:
+    """Process a single streaming iteration. Returns False to stop streaming."""
+    global current_device, signal_processor, waterfall_processor
+
+    # Check device health
+    if not current_device or not current_device.is_connected:
+        logger.warning("Device disconnected during streaming")
+        socketio.emit(
+            "device_error",
+            {"error": "Device disconnected", "timestamp": datetime.now().isoformat()},
+        )
+        return False
+
+    samples = current_device.read_samples(signal_processor.fft_size)
+    if samples is None:
+        return True  # Let caller handle error backoff
+
+    freqs, spectrum = signal_processor.compute_fft(samples)
+    waterfall_processor.add_spectrum(spectrum)
+    signals = signal_processor.detect_signals(spectrum, current_device.frequency)
+    features = signal_processor.extract_features(samples)
+
+    for sig in signals[:10]:
+        try:
+            classification = signal_classifier.classify_signal(
+                frequency=sig["frequency"], features=features, spectrum=spectrum, signal_info=sig
+            )
+            sig["category"] = classification.category
+            sig["confidence"] = classification.confidence
+            sig["modulation"] = classification.modulation
+            sig["description"] = classification.description
+            sig["technical_details"] = classification.technical_details
+        except Exception as e:
+            logger.error(f"Error classifying signal: {e}")
+            sig["category"] = "unknown"
+            sig["confidence"] = 0.0
+            sig["modulation"] = "Unknown"
+            sig["description"] = "Unknown Signal"
+            sig["technical_details"] = {}
+
+    if np.random.rand() < 0.1:
+        try:
+            data_collector.add_sample(
+                samples=samples,
+                spectrum=spectrum,
+                frequency=current_device.frequency,
+                sample_rate=current_device.sample_rate,
+                gain=current_device.gain,
+                signals_detected=signals,
+            )
+        except Exception as e:
+            logger.error(f"Error collecting data: {e}")
+
+    socketio.emit(
+        "spectrum_data",
+        {
+            "frequencies": freqs.tolist(),
+            "spectrum": spectrum.tolist(),
+            "signals": signals,
+            "features": features,
+            "timestamp": datetime.now().isoformat(),
+        },
+    )
+
+    if int(time.time() * 10) % 5 == 0:
+        waterfall_data = waterfall_processor.get_waterfall()
+        socketio.emit(
+            "waterfall_data",
+            {"data": waterfall_data.tolist(), "timestamp": datetime.now().isoformat()},
+        )
+
+    time.sleep(0.1)
+    return True
+
+
 def streaming_worker():
     """Worker thread for real-time spectrum streaming."""
-    global current_device, streaming_active, signal_processor, waterfall_processor
+    global current_device, streaming_active
 
     logger.info("Starting streaming worker")
     consecutive_errors = 0
@@ -853,107 +989,12 @@ def streaming_worker():
 
     while streaming_active:
         try:
-            # Check device health
-            if not current_device or not current_device.is_connected:
-                logger.warning("Device disconnected during streaming")
-                socketio.emit(
-                    "device_error",
-                    {"error": "Device disconnected", "timestamp": datetime.now().isoformat()},
-                )
+            should_continue = _process_stream_iteration()
+            if not should_continue:
                 streaming_active = False
                 break
-
-            # Read samples
-            samples = current_device.read_samples(signal_processor.fft_size)
-            if samples is None:
-                consecutive_errors += 1
-                if consecutive_errors >= max_consecutive_errors:
-                    logger.error(
-                        f"Too many consecutive read failures ({consecutive_errors}), stopping stream"
-                    )
-                    socketio.emit(
-                        "device_error",
-                        {"error": "Device read failures", "timestamp": datetime.now().isoformat()},
-                    )
-                    streaming_active = False
-                    break
-                time.sleep(0.1)
-                continue
-
-            # Reset error counter on successful read
+            # Reset errors when iteration succeeds fully
             consecutive_errors = 0
-
-            # Process spectrum
-            freqs, spectrum = signal_processor.compute_fft(samples)
-
-            # Add to waterfall
-            waterfall_processor.add_spectrum(spectrum)
-
-            # Detect signals
-            signals = signal_processor.detect_signals(spectrum, current_device.frequency)
-
-            # Extract features for AI processing
-            features = signal_processor.extract_features(samples)
-
-            # Classify each detected signal (limit to first 10 to prevent slowdown)
-            for signal in signals[:10]:
-                try:
-                    classification = signal_classifier.classify_signal(
-                        frequency=signal["frequency"],
-                        features=features,
-                        spectrum=spectrum,
-                        signal_info=signal,
-                    )
-                    signal["category"] = classification.category
-                    signal["confidence"] = classification.confidence
-                    signal["modulation"] = classification.modulation
-                    signal["description"] = classification.description
-                    signal["technical_details"] = classification.technical_details
-                except Exception as e:
-                    logger.error(f"Error classifying signal: {e}")
-                    signal["category"] = "unknown"
-                    signal["confidence"] = 0.0
-                    signal["modulation"] = "Unknown"
-                    signal["description"] = "Unknown Signal"
-                    signal["technical_details"] = {}
-
-            # Collect data for ML training (sample 10% to reduce overhead)
-            if np.random.rand() < 0.1:
-                try:
-                    data_collector.add_sample(
-                        samples=samples,
-                        spectrum=spectrum,
-                        frequency=current_device.frequency,
-                        sample_rate=current_device.sample_rate,
-                        gain=current_device.gain,
-                        signals_detected=signals,
-                    )
-                except Exception as e:
-                    logger.error(f"Error collecting data: {e}")
-
-            # Emit spectrum data
-            socketio.emit(
-                "spectrum_data",
-                {
-                    "frequencies": freqs.tolist(),
-                    "spectrum": spectrum.tolist(),
-                    "signals": signals,
-                    "features": features,
-                    "timestamp": datetime.now().isoformat(),
-                },
-            )
-
-            # Emit waterfall data (less frequently)
-            if int(time.time() * 10) % 5 == 0:  # Every 0.5 seconds
-                waterfall_data = waterfall_processor.get_waterfall()
-                socketio.emit(
-                    "waterfall_data",
-                    {"data": waterfall_data.tolist(), "timestamp": datetime.now().isoformat()},
-                )
-
-            # Small delay to prevent overwhelming the system
-            time.sleep(0.1)
-
         except Exception as e:
             logger.error(f"Error in streaming worker: {e}", exc_info=True)
             consecutive_errors += 1

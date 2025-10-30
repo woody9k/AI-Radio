@@ -200,7 +200,6 @@ class SignalClassifier:
         confidence = 0.7  # Base confidence for frequency match
 
         # Analyze spectral characteristics
-        spectral_centroid = features.get("spectral_centroid", 0)
         spectral_bandwidth = features.get("spectral_bandwidth", 0)
 
         # Bandwidth analysis
@@ -212,9 +211,7 @@ class SignalClassifier:
                 confidence += 0.2
 
         # Power analysis
-        total_power = features.get("total_power", 0)
         peak_power = features.get("peak_power", 0)
-        power_ratio = features.get("power_ratio", 0)
 
         # Strong signals get higher confidence
         if peak_power > 20:  # dB

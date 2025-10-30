@@ -308,7 +308,6 @@ class SignalProcessor:
 
     def get_frequency_range(self, center_freq: float) -> tuple[float, float]:
         """Get the frequency range covered by the current FFT."""
-        freq_resolution = self.sample_rate / self.fft_size
         start_freq = center_freq - self.sample_rate / 2
         end_freq = center_freq + self.sample_rate / 2
 
