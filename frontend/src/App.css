@@ -51,9 +51,6 @@
   padding: 1rem 2rem;
   background-color: var(--panel-bg);
   border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  z-index: 1000;
 }
 
 .app-header h1 {
@@ -68,9 +65,6 @@
   display: flex;
   gap: 8px;
   background-color: var(--panel-bg);
-  position: sticky;
-  top: 56px; /* below header */
-  z-index: 900;
   min-height: 44px; /* reserve space even if buttons hidden/disabled */
 }
 
