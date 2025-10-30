@@ -148,10 +148,13 @@ const Controls = ({
     <div className="card" style={{ padding: '8px' }}>
       <h3 className="text-lg font-bold mb-4">Controls</h3>
       
-      {!deviceConnected ? (
-        <p className="text-gray-300 text-sm">Connect a device to access controls</p>
-      ) : (
-        <div>
+      <div>
+        {!deviceConnected && (
+          <p className="text-gray-300 text-sm" style={{ marginBottom: 8 }}>
+            Connect a device to enable controls (preview shown)
+          </p>
+        )}
+        <fieldset disabled={!deviceConnected} style={{ border: 0, padding: 0, margin: 0, opacity: deviceConnected ? 1 : 0.6 }}>
           {/* Radio Section */}
           <div style={{ background: '#151515', border: '1px solid #333', borderRadius: 6, padding: 8, marginBottom: 6 }}>
             <div className="text-xs uppercase tracking-wide text-gray-300 font-semibold" style={{ marginBottom: 6 }}>
@@ -349,8 +352,8 @@ const Controls = ({
               )}
             </div>
           </div>
-        </div>
-      )}
+        </fieldset>
+      </div>
     </div>
   )
 }
