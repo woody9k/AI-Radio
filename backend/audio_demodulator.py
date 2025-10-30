@@ -26,8 +26,11 @@ class AudioDemodulator:
         self.audio_rate = audio_rate
         self.decimation = int(sample_rate / audio_rate)
 
-        # FM demodulation state
+        # Demodulation state
+        self.mode = "WFM"  # Current demodulation mode
         self.fm_prev_phase = 0.0
+        self.squelch_threshold = -120.0  # Squelch threshold in dB
+        self.squelch_enabled = False
 
         # Audio filters
         self._design_filters()
@@ -123,26 +126,90 @@ class AudioDemodulator:
             logger.error(f"Error in AM demodulation: {e}")
             return np.zeros(len(iq_samples) // self.decimation, dtype=np.float32)
 
-    def demodulate(self, iq_samples: np.ndarray, mode: str = "FM") -> np.ndarray:
+    def demodulate(self, iq_samples: np.ndarray, mode: str | None = None) -> np.ndarray:
         """
         Demodulate IQ samples based on mode.
 
         Args:
             iq_samples: Complex IQ samples from SDR
-            mode: Demodulation mode ('FM' or 'AM')
+            mode: Demodulation mode ('WFM', 'NFM', 'AM', 'SSB'). If None, uses current mode.
 
         Returns:
             Audio samples as float32 array (normalized -1 to 1)
         """
-        mode = mode.upper()
+        if mode is None:
+            mode = self.mode
+        else:
+            mode = mode.upper()
+            self.mode = mode
 
-        if mode == "FM":
+        # Apply squelch if enabled
+        if self.squelch_enabled:
+            power_db = 20 * np.log10(np.abs(iq_samples).mean() + 1e-10)
+            if power_db < self.squelch_threshold:
+                # Mute audio - return silence
+                return np.zeros(len(iq_samples) // self.decimation, dtype=np.float32)
+
+        if mode in ["WFM", "NFM"]:
             return self.demodulate_fm(iq_samples)
         elif mode == "AM":
             return self.demodulate_am(iq_samples)
+        elif mode == "SSB":
+            return self.demodulate_ssb(iq_samples)
         else:
             logger.warning(f"Unknown demodulation mode: {mode}, defaulting to FM")
             return self.demodulate_fm(iq_samples)
+
+    def demodulate_ssb(self, iq_samples: np.ndarray) -> np.ndarray:
+        """
+        Demodulate SSB (Single Side Band) signal.
+        
+        Args:
+            iq_samples: Complex IQ samples from SDR
+            
+        Returns:
+            Audio samples as float32 array (normalized -1 to 1)
+        """
+        try:
+            # SSB demodulation: use the real part for USB, imaginary for LSB
+            # For now, assume USB (Upper Side Band) - take real part
+            audio = np.real(iq_samples)
+            
+            # Remove DC component
+            audio = audio - np.mean(audio)
+            
+            # Decimate to audio rate
+            audio = scipy_signal.decimate(audio, self.decimation, ftype="iir", zero_phase=True)
+            
+            # Low-pass filter
+            audio = scipy_signal.sosfilt(self.audio_lpf, audio)
+            
+            # Normalize to -1 to 1 range
+            max_val = np.max(np.abs(audio))
+            if max_val > 0:
+                audio = audio / max_val * 0.95  # Leave headroom
+                
+            return audio.astype(np.float32)
+            
+        except Exception as e:
+            logger.error(f"Error in SSB demodulation: {e}")
+            return np.zeros(len(iq_samples) // self.decimation, dtype=np.float32)
+
+    def set_mode(self, mode: str):
+        """Set the demodulation mode."""
+        valid_modes = ["WFM", "NFM", "AM", "SSB"]
+        mode = mode.upper()
+        if mode in valid_modes:
+            self.mode = mode
+            logger.info(f"Demodulation mode set to {mode}")
+        else:
+            logger.warning(f"Invalid mode: {mode}, keeping current mode: {self.mode}")
+
+    def set_squelch(self, threshold_db: float, enabled: bool = True):
+        """Set squelch threshold and enable/disable squelch."""
+        self.squelch_threshold = threshold_db
+        self.squelch_enabled = enabled
+        logger.info(f"Squelch {'enabled' if enabled else 'disabled'} at {threshold_db} dB")
 
     def update_sample_rate(self, sample_rate: int):
         """Update sample rate and recalculate decimation."""

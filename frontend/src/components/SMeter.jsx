@@ -1,42 +1,54 @@
 import React, { useState, useEffect, useRef } from 'react'
 
-const SMeter = ({ spectrumData }) => {
+const SMeter = ({ spectrumData, tunedFrequency }) => {
   const [sValue, setSValue] = useState(0)
   const [peakValue, setPeakValue] = useState(0)
   const [power, setPower] = useState(-120)
   const peakHoldTimer = useRef(null)
 
   useEffect(() => {
-    if (!spectrumData || !spectrumData.spectrum || !Array.isArray(spectrumData.spectrum) || spectrumData.spectrum.length === 0) return
+    if (!spectrumData || !Array.isArray(spectrumData.spectrum) || spectrumData.spectrum.length === 0) return
 
     try {
-      // Calculate average power from spectrum
       const spectrum = spectrumData.spectrum
-      // const avgPower = spectrum.reduce((sum, val) => sum + val, 0) / spectrum.length
+      const freqs = spectrumData.frequencies
 
-      // Find peak power
-      const maxPower = Math.max(...spectrum)
-
-    setPower(maxPower)
-
-    // Convert power to S-units
-    const sUnits = powerToSUnits(maxPower)
-    setSValue(sUnits)
-
-    // Update peak hold
-    if (sUnits.total > peakValue) {
-      setPeakValue(sUnits.total)
-
-      // Clear existing timer
-      if (peakHoldTimer.current) {
-        clearTimeout(peakHoldTimer.current)
+      let refPower
+      if (Array.isArray(freqs) && typeof tunedFrequency === 'number') {
+        // Use a ±25 kHz window around tuned frequency
+        const windowHz = 25000
+        const idxs = freqs
+          .map((f, i) => ({ f, i }))
+          .filter(x => Math.abs(x.f - tunedFrequency) <= windowHz)
+          .map(x => x.i)
+        const windowVals = idxs.length ? idxs.map(i => spectrum[i]) : spectrum
+        // 90th percentile to be noise-robust
+        const sorted = [...windowVals].sort((a, b) => a - b)
+        const p90Index = Math.max(0, Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9)))
+        refPower = sorted[p90Index]
+      } else {
+        // Fallback to global max if we don't know tuned frequency
+        refPower = Math.max(...spectrum)
       }
 
-      // Set new timer to decay peak after 2 seconds
-      peakHoldTimer.current = setTimeout(() => {
-        setPeakValue(0)
-      }, 2000)
-    }
+      setPower(refPower)
+      const sUnits = powerToSUnits(refPower)
+      setSValue(sUnits)
+
+      // Update peak hold
+      if (sUnits.total > peakValue) {
+        setPeakValue(sUnits.total)
+
+        // Clear existing timer
+        if (peakHoldTimer.current) {
+          clearTimeout(peakHoldTimer.current)
+        }
+
+        // Set new timer to decay peak after 2 seconds
+        peakHoldTimer.current = setTimeout(() => {
+          setPeakValue(0)
+        }, 2000)
+      }
 
       return () => {
         if (peakHoldTimer.current) {
@@ -46,7 +58,7 @@ const SMeter = ({ spectrumData }) => {
     } catch (error) {
       console.error('Error in SMeter useEffect:', error)
     }
-  }, [spectrumData])
+  }, [spectrumData, tunedFrequency])
 
   const powerToSUnits = (power) => {
     // S9 = -73 dBm reference level (commonly used for HF)

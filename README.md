@@ -5,10 +5,13 @@ A modern web-based interface for RTL-SDR devices with AI-powered anomaly detecti
 ## Features
 
 - **Real-time Spectrum Visualization**: Waterfall displays and frequency plots
+- **Interactive Spectrum Tuning**: Click in the spectrum to tune; drag to select bandwidth (center + BW)
+- **Tuned Frequency Marker**: Always-visible marker and label at the tuned frequency
 - **AI Signal Classification**: Automatically identify signal types (AM, FM, digital, etc.)
 - **Anomaly Detection**: Detect unusual signals and interference patterns
 - **Smart Scanning**: AI-guided frequency scanning based on learned patterns
 - **User-Friendly Interface**: Simple presets for beginners, advanced controls for hobbyists
+- **SDR#-Style Controls**: Left panel split into Radio and Device sections (Mode, Bandwidth, AGC, Squelch, Bias‑T when available)
 - **Signal Recording**: Capture and replay interesting signals
 
 ## Quick Start
@@ -96,10 +99,13 @@ AI-Radio/
 - **RTL-SDR Interface**: Device detection, connection, and control
 - **Signal Processing**: Real-time FFT, spectrum analysis, peak detection
 - **Web Interface**: Modern React frontend with real-time visualizations
-- **Preset System**: 10+ built-in presets for common radio applications
+- **Preset System**: 10+ built-in presets for common radio applications (now displayed below the S‑Meter)
 - **Data Collection**: Automatic ML training data gathering
 - **REST API**: Complete backend API with WebSocket streaming
 - **Real-time Visualization**: Spectrum plots and waterfall display
+ - **AI Chat**: Right-side assistant for intent parsing and command execution
+ - **Interactive Spectrum**: Click-to-tune and drag-to-select bandwidth
+ - **S‑Meter Improvements**: Windowed, noise‑robust S‑unit calculation around tuned frequency
 
 ### 🔄 **In Progress**
 - AI anomaly detection models
@@ -135,6 +141,23 @@ For each dev session, run:
 scripts/session_init.sh --fix
 ```
 This checks conformance (lint/format), applies fixes, optionally tests device/AI, and starts services.
+
+### Updated Controls (SDR#‑style)
+- Radio Section:
+  - Frequency input with ±10 kHz step buttons and slider (25 MHz–1.75 GHz)
+  - Mode selector: WFM, NFM, AM, SSB
+  - Filter/Bandwidth input (optional)
+  - Squelch toggle and threshold slider
+  - AGC toggle
+- Device Section:
+  - Gain selector (Auto or fixed values)
+  - Sample rate selector (250 kS/s–3.072 MS/s)
+  - Bias‑T toggle (if supported, e.g., RTL‑SDR Blog V4)
+
+### AI Settings
+- Set your OpenAI API key in Settings → AI Settings, or export `OPENAI_API_KEY`.
+- Chat panel (right side) sends commands to `/api/ai/command`.
+- System prompt guides intent mapping to radio commands.
 
 ## Testing Your RTL-SDR Setup
 

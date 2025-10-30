@@ -311,11 +311,6 @@ function App() {
             onStopStreaming={stopStreaming}
             onUpdateSettings={updateSettings}
           />
-          
-          <Presets
-            deviceConnected={deviceConnected}
-            onApplyPreset={updateSettings}
-          />
         </div>
 
         <div className="main-content">
@@ -324,8 +319,17 @@ function App() {
             waterfallData={waterfallData}
             streaming={streaming}
             onTuneToFrequency={tuneToFrequency}
+            currentFrequency={deviceInfo?.frequency}
           />
-          <SMeter spectrumData={spectrumData} />
+          <SMeter spectrumData={spectrumData} tunedFrequency={deviceInfo?.frequency} />
+
+          {/* Move Presets here below the SMeter */}
+          <div style={{ padding: 12 }}>
+            <Presets
+              deviceConnected={deviceConnected}
+              onApplyPreset={updateSettings}
+            />
+          </div>
         </div>
 
         <div className="right-panel">

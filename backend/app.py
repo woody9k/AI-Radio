@@ -246,6 +246,10 @@ def handle_settings():
                         "sample_rate": device_info.get("sample_rate", 0),
                         "gain": device_info.get("gain", "auto"),
                         "bandwidth": device_info.get("bandwidth"),
+                        "mode": device_info.get("mode", "WFM"),
+                        "agc_enabled": device_info.get("agc_enabled", False),
+                        "bias_t": device_info.get("bias_t", False),
+                        "capabilities": device_info.get("capabilities", {}),
                     },
                 }
             )
@@ -285,6 +289,35 @@ def handle_settings():
                 if not current_device.set_bandwidth(float(data["bandwidth"])):
                     success = False
                     errors.append("Failed to set bandwidth")
+
+            # Update mode
+            if "mode" in data:
+                if not current_device.set_mode(data["mode"]):
+                    success = False
+                    errors.append("Failed to set mode")
+                else:
+                    # Update audio demodulator mode
+                    audio_demodulator.set_mode(data["mode"])
+
+            # Update AGC
+            if "agc_enabled" in data:
+                if not current_device.set_agc(bool(data["agc_enabled"])):
+                    success = False
+                    errors.append("Failed to set AGC")
+
+            # Update bias-T
+            if "bias_t" in data:
+                if not current_device.set_bias_t(bool(data["bias_t"])):
+                    # Don't fail if bias-T is not supported, just log warning
+                    if current_device.device_capabilities.get("bias_t", False):
+                        success = False
+                        errors.append("Failed to set bias-T")
+
+            # Update squelch (audio demodulator setting)
+            if "squelch_threshold" in data or "squelch_enabled" in data:
+                threshold = data.get("squelch_threshold", audio_demodulator.squelch_threshold)
+                enabled = data.get("squelch_enabled", audio_demodulator.squelch_enabled)
+                audio_demodulator.set_squelch(float(threshold), bool(enabled))
 
             if success:
                 return jsonify({"success": True, "settings": current_device.get_device_info()})

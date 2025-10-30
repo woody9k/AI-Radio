@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react'
 
-const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequency }) => {
+const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequency, currentFrequency }) => {
   const canvasRef = useRef(null)
   const waterfallRef = useRef(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 400 })
@@ -172,6 +172,38 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
         }
       }
       ctx.stroke()
+
+      // Tuned frequency marker (vertical line)
+      if (typeof currentFrequency === 'number') {
+        // Find nearest index for the tuned frequency
+        const minF = frequencies[0]
+        const maxF = frequencies[frequencies.length - 1]
+        if (currentFrequency >= minF && currentFrequency <= maxF) {
+          // Compute x position by nearest index
+          let idx = 0
+          // binary search for efficiency could be added; linear is fine for now
+          for (let i = 1; i < frequencies.length; i++) {
+            if (frequencies[i] >= currentFrequency) { idx = i; break }
+          }
+          const x = (idx / (frequencies.length - 1)) * width
+          // Vertical line
+          ctx.strokeStyle = '#f59e0b' // amber
+          ctx.setLineDash([4, 4])
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.moveTo(x, 0)
+          ctx.lineTo(x, height)
+          ctx.stroke()
+          ctx.setLineDash([])
+
+          // Label
+          ctx.fillStyle = '#f59e0b'
+          ctx.font = '12px Arial'
+          const label = `Tune: ${formatFrequency(currentFrequency)}`
+          const labelWidth = ctx.measureText(label).width
+          ctx.fillText(label, Math.min(Math.max(4, x - labelWidth / 2), width - labelWidth - 4), 18)
+        }
+      }
 
       // Draw detected signals
       if (spectrumData.signals) {
