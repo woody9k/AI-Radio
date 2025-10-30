@@ -154,6 +154,13 @@ This checks conformance (lint/format), applies fixes, optionally tests device/AI
   - Sample rate selector (250 kS/s–3.072 MS/s)
   - Bias‑T toggle (if supported, e.g., RTL‑SDR Blog V4)
 
+### Themes
+- Choose a theme in Settings → Theme (Minimal, Slate, Graphite, Forest). Your choice persists and applies to the spectrum, labels, and UI panels.
+
+### Layout & Navigation
+- The top header is sticky to keep navigation available while switching panes.
+- The left panel avoids inner scrolling; the page scrolls instead.
+
 ### AI Settings
 - Set your OpenAI API key in Settings → AI Settings, or export `OPENAI_API_KEY`.
 - Chat panel (right side) sends commands to `/api/ai/command`.
