@@ -94,7 +94,7 @@ const Controls = ({
     onUpdateSettings(settings)
   }
 
-  const formatFrequency =多处 (freq) => {
+  const formatFrequency = (freq) => {
     if (freq >= 1e9) {
       return `${(freq / 1e9).toFixed(3)} GHz`
     } else if (freq >= 1e6) {
