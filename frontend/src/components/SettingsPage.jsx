@@ -7,7 +7,8 @@ export default function SettingsPage() {
 		openai_model: 'gpt-4o-mini',
 		provider: 'openai',
 		region: 'auto',
-		auto_execute: false,
+    auto_execute: false,
+    theme: 'minimal',
 	})
 	const [saving, setSaving] = useState(false)
 	const [message, setMessage] = useState('')
@@ -15,6 +16,9 @@ export default function SettingsPage() {
 	useEffect(() => {
 		getAISettings().then(res => {
 			if (res.success) setSettings(prev => ({ ...prev, ...res.settings }))
+      // Apply theme if present
+      const theme = res?.settings?.theme || 'minimal'
+      document.documentElement.setAttribute('data-theme', theme)
 		})
 	}, [])
 
@@ -35,6 +39,20 @@ export default function SettingsPage() {
 		<div style={{ padding: 16 }}>
 			<h2>AI Settings</h2>
 			<form onSubmit={onSave} style={{ maxWidth: 480, display: 'grid', gap: 12 }}>
+        <label>
+          Theme
+          <select value={settings.theme}
+            onChange={e => {
+              const t = e.target.value
+              setSettings({ ...settings, theme: t })
+              document.documentElement.setAttribute('data-theme', t)
+            }}>
+            <option value="minimal">Minimal Mono</option>
+            <option value="slate">Cool Slate</option>
+            <option value="graphite">Graphite</option>
+            <option value="forest">Forest Dim</option>
+          </select>
+        </label>
 				<label>
 					Provider
 					<select value={settings.provider} onChange={e => setSettings({ ...settings, provider: e.target.value })}>

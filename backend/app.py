@@ -92,6 +92,7 @@ def ai_settings():
             "provider": data.get("provider"),
             "auto_execute": data.get("auto_execute"),
             "region": data.get("region"),
+            "theme": data.get("theme"),
         }
     )
     # Mask in response

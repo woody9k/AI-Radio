@@ -13,6 +13,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "provider": "openai",
     "auto_execute": False,
     "region": "auto",
+    "theme": "minimal",
 }
 
 

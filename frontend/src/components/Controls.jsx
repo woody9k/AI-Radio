@@ -113,17 +113,17 @@ const Controls = ({
   const deviceSupportsBiasT = deviceInfo?.capabilities?.bias_t || false
 
   return (
-    <div className="card" style={{ padding: '12px' }}>
+    <div className="card" style={{ padding: '8px' }}>
       <h3 className="text-lg font-bold mb-4">Controls</h3>
       
       {!deviceConnected ? (
         <p className="text-gray-300 text-sm">Connect a device to access controls</p>
       ) : (
-        <div className="space-y-6">
+        <div>
           {/* Radio Section */}
-          <div>
-            <div className="border-b border-gray-600 mb-3 pb-1 text-xs uppercase tracking-wide text-gray-400 font-semibold">
-              Radio
+          <div style={{ background: '#151515', border: '1px solid #333', borderRadius: 6, padding: 8, marginBottom: 6 }}>
+            <div className="text-xs uppercase tracking-wide text-gray-300 font-semibold" style={{ marginBottom: 6 }}>
+              Radio Controls
             </div>
 
             {/* Frequency */}
@@ -131,26 +131,26 @@ const Controls = ({
               <label className="block text-sm text-gray-300 mb-1">
                 Frequency: {formatFrequency(frequency)}
               </label>
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '4px' }}>
                 <input
                   type="number"
                   value={frequency}
                   onChange={handleFrequencyChange}
                   className="input"
-                  style={{ flex: 1, padding: '6px 8px', fontSize: '13px' }}
+                  style={{ flex: 1, padding: '4px 6px', fontSize: '12px' }}
                   step="1000"
                 />
                 <button 
                   className="btn btn-secondary text-xs" 
                   onClick={() => handleFrequencyStep(-10000)}
-                  style={{ padding: '6px 12px' }}
+                  style={{ padding: '4px 8px' }}
                 >
                   -10 kHz
                 </button>
                 <button 
                   className="btn btn-secondary text-xs" 
                   onClick={() => handleFrequencyStep(10000)}
-                  style={{ padding: '6px 12px' }}
+                  style={{ padding: '4px 8px' }}
                 >
                   +10 kHz
                 </button>
@@ -171,14 +171,14 @@ const Controls = ({
             </div>
 
             {/* Mode + Bandwidth */}
-            <div className="mb-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <div className="mb-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
               <div>
                 <label className="block text-sm text-gray-300 mb-1">Mode</label>
                 <select
                   value={mode}
                   onChange={handleModeChange}
                   className="input w-full"
-                  style={{ padding: '6px 8px', fontSize: '13px' }}
+                  style={{ padding: '4px 6px', fontSize: '12px' }}
                 >
                   <option value="WFM">WFM</option>
                   <option value="NFM">NFM</option>
@@ -194,13 +194,13 @@ const Controls = ({
                   onChange={handleBandwidthChange}
                   placeholder="Auto"
                   className="input w-full"
-                  style={{ padding: '6px 8px', fontSize: '13px' }}
+                  style={{ padding: '4px 6px', fontSize: '12px' }}
                 />
               </div>
             </div>
 
             {/* Squelch + AGC */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
               <label className="text-sm text-gray-300 flex items-center gap-2 cursor-pointer">
                 <input 
                   type="checkbox" 
@@ -241,16 +241,16 @@ const Controls = ({
             <button 
               className="btn btn-primary w-full" 
               onClick={applySettings}
-              style={{ marginTop: '10px', padding: '8px' }}
+              style={{ marginTop: '6px', padding: '6px' }}
             >
               Apply Settings
             </button>
           </div>
 
           {/* Device Section */}
-          <div>
-            <div className="border-b border-gray-600 mb-3 pb-1 text-xs uppercase tracking-wide text-gray-400 font-semibold">
-              Device
+          <div style={{ background: '#151515', border: '1px solid #333', borderRadius: 6, padding: 8, marginBottom: 6 }}>
+            <div className="text-xs uppercase tracking-wide text-gray-300 font-semibold" style={{ marginBottom: 6 }}>
+              Device Settings
             </div>
 
             {/* Gain */}
@@ -260,7 +260,7 @@ const Controls = ({
                 value={gain}
                 onChange={handleGainChange}
                 className="input w-full"
-                style={{ padding: '6px 8px', fontSize: '13px' }}
+                style={{ padding: '4px 6px', fontSize: '12px' }}
               >
                 <option value="auto">Auto</option>
                 <option value="0">0 dB</option>
@@ -284,7 +284,7 @@ const Controls = ({
                 value={sampleRate}
                 onChange={handleSampleRateChange}
                 className="input w-full"
-                style={{ padding: '6px 8px', fontSize: '13px' }}
+                style={{ padding: '4px 6px', fontSize: '12px' }}
               >
                 <option value={250000}>250 kS/s</option>
                 <option value={500000}>500 kS/s</option>
@@ -298,7 +298,7 @@ const Controls = ({
 
             {/* Bias-T (if supported) */}
             {deviceSupportsBiasT && (
-              <label className="text-sm text-gray-300 flex items-center gap-2 cursor-pointer mb-3">
+              <label className="text-sm text-gray-300 flex items-center gap-2 cursor-pointer mb-2">
                 <input 
                   type="checkbox" 
                   checked={biasT}
@@ -311,12 +311,12 @@ const Controls = ({
 
             {/* Streaming */}
             <div className="border-t border-gray-600 pt-4" style={{ marginTop: '10px' }}>
-              <h4 className="text-sm font-bold text-gray-300 mb-2">Streaming</h4>
+              <h4 className="text-sm font-bold text-gray-300 mb-1">Streaming</h4>
               {!streaming ? (
                 <button 
                   className="btn btn-success w-full" 
                   onClick={onStartStreaming}
-                  style={{ padding: '8px' }}
+                  style={{ padding: '6px' }}
                 >
                   Start Streaming
                 </button>
@@ -324,7 +324,7 @@ const Controls = ({
                 <button 
                   className="btn btn-danger w-full" 
                   onClick={onStopStreaming}
-                  style={{ padding: '8px' }}
+                  style={{ padding: '6px' }}
                 >
                   Stop Streaming
                 </button>

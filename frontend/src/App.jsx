@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { io } from 'socket.io-client'
 import Controls from './components/Controls'
 import SpectrumDisplay from './components/SpectrumDisplay'
@@ -7,9 +7,9 @@ import AIPanel from './components/AIPanel'
 import ChatPanel from './components/ChatPanel'
 import SettingsPage from './components/SettingsPage'
 import Presets from './components/Presets'
-import AudioPlayer from './components/AudioPlayer'
 import SMeter from './components/SMeter'
 import './App.css'
+import { getAISettings } from './api/aiClient'
 
 function App() {
   const [socket, setSocket] = useState(null)
@@ -22,6 +22,7 @@ function App() {
   const [aiDetections, setAiDetections] = useState([])
   const [viewMode, setViewMode] = useState('beginner') // 'beginner' or 'advanced'
   const [activePane, setActivePane] = useState('radio') // 'radio' | 'chat' | 'settings' | 'analysis'
+  const refreshingDevicesRef = useRef(false)
 
   useEffect(() => {
     // Initialize WebSocket connection
@@ -35,6 +36,10 @@ function App() {
     newSocket.on('disconnect', () => {
       console.log('Disconnected from server')
       setConnected(false)
+    })
+    newSocket.io.on('reconnect', () => {
+      console.log('Reconnected to server')
+      setConnected(true)
     })
 
     newSocket.on('spectrum_data', (data) => {
@@ -70,24 +75,25 @@ function App() {
       alert(`Device error: ${data.error}. Please reconnect the device.`)
     })
 
+    // Consolidated disconnect above; keep device state updates here
     newSocket.on('disconnect', () => {
-      console.log('Disconnected from server')
       setDeviceConnected(false)
       setStreaming(false)
     })
 
     setSocket(newSocket)
 
-    // Health check every 5 seconds to detect backend restart
+    // Health check every 5 seconds to detect backend restart (debounced)
     const healthCheckInterval = setInterval(async () => {
       try {
         const response = await fetch('/api/health')
         const data = await response.json()
         if (data.success) {
           // If backend says device is connected but frontend thinks it's not, refresh
-          if (data.device_connected && !deviceConnected) {
+          if (data.device_connected && !deviceConnected && !refreshingDevicesRef.current) {
             console.log('Backend has device but frontend does not - fetching devices')
-            fetchDevices()
+            refreshingDevicesRef.current = true
+            try { await fetchDevices() } finally { refreshingDevicesRef.current = false }
           }
           // If backend says not connected but frontend thinks it is, update
           if (!data.device_connected && deviceConnected) {
@@ -97,7 +103,8 @@ function App() {
           }
         }
       } catch (error) {
-        console.error('Health check failed:', error)
+        // Suppress noisy logs during network changes/HMR
+        // console.debug('Health check failed:', error)
       }
     }, 5000)
 
@@ -105,6 +112,16 @@ function App() {
       newSocket.close()
       clearInterval(healthCheckInterval)
     }
+  }, [])
+
+  // Load theme on mount
+  useEffect(() => {
+    getAISettings().then(res => {
+      const theme = res?.settings?.theme || 'minimal'
+      document.documentElement.setAttribute('data-theme', theme)
+    }).catch(() => {
+      document.documentElement.setAttribute('data-theme', 'minimal')
+    })
   }, [])
 
   const fetchDevices = async () => {
@@ -296,11 +313,6 @@ function App() {
             deviceInfo={deviceInfo}
             onConnect={connectDevice}
             onDisconnect={disconnectDevice}
-          />
-          
-          <AudioPlayer
-            socket={socket}
-            deviceConnected={deviceConnected}
           />
           
           <Controls

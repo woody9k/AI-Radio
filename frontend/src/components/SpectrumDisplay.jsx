@@ -120,12 +120,23 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
     const ctx = canvas.getContext('2d')
     const { width, height } = dimensions
 
+    // Theme colors from CSS variables
+    const styles = getComputedStyle(document.documentElement)
+    const colorGrid = styles.getPropertyValue('--grid') || '#333'
+    const colorSpectrum = styles.getPropertyValue('--spectrum') || '#9ca3af'
+    const colorSignal = styles.getPropertyValue('--signal') || '#3b82f6'
+    const colorSignalUnknown = styles.getPropertyValue('--signal-unknown') || '#ef4444'
+    const colorText = styles.getPropertyValue('--text') || '#ffffff'
+    const colorMuted = styles.getPropertyValue('--muted') || '#999'
+    const colorTooltip = styles.getPropertyValue('--tooltip-bg') || 'rgba(0,0,0,0.8)'
+    const colorAccent = styles.getPropertyValue('--accent') || '#f59e0b'
+
     // Clear canvas
     ctx.fillStyle = '#0a0a0a'
     ctx.fillRect(0, 0, width, height)
 
     // Draw grid
-    ctx.strokeStyle = '#333'
+    ctx.strokeStyle = colorGrid.trim()
     ctx.lineWidth = 1
     
     // Horizontal grid lines
@@ -156,7 +167,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       const maxPower = Math.max(...spectrum)
       const powerRange = maxPower - minPower
 
-      ctx.strokeStyle = '#3b82f6'
+      ctx.strokeStyle = colorSpectrum.trim()
       ctx.lineWidth = 2
       ctx.beginPath()
 
@@ -187,7 +198,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
           }
           const x = (idx / (frequencies.length - 1)) * width
           // Vertical line
-          ctx.strokeStyle = '#f59e0b' // amber
+          ctx.strokeStyle = colorAccent.trim()
           ctx.setLineDash([4, 4])
           ctx.lineWidth = 2
           ctx.beginPath()
@@ -197,7 +208,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
           ctx.setLineDash([])
 
           // Label
-          ctx.fillStyle = '#f59e0b'
+          ctx.fillStyle = colorAccent.trim()
           ctx.font = '12px Arial'
           const label = `Tune: ${formatFrequency(currentFrequency)}`
           const labelWidth = ctx.measureText(label).width
@@ -218,25 +229,25 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
             const y = height - (normalizedPower * height * 0.9) - height * 0.05
 
             // Draw signal marker
-            ctx.fillStyle = signal.category && signal.category !== 'unknown' ? '#10b981' : '#ef4444'
+            ctx.fillStyle = (signal.category && signal.category !== 'unknown') ? colorSignal.trim() : colorSignalUnknown.trim()
             ctx.beginPath()
             ctx.arc(x, y, 5, 0, 2 * Math.PI)
             ctx.fill()
             
             // Draw border for clickability
-            ctx.strokeStyle = '#ffffff'
+            ctx.strokeStyle = colorText.trim()
             ctx.lineWidth = 1
             ctx.stroke()
 
             // Draw signal label
-            ctx.fillStyle = '#ffffff'
+            ctx.fillStyle = colorText.trim()
             ctx.font = '11px Arial'
             const label = `${(signal.frequency / 1e6).toFixed(3)} MHz`
             ctx.fillText(label, x + 8, y - 8)
             
             // Show category if classified
             if (signal.category && signal.category !== 'unknown') {
-              ctx.fillStyle = '#10b981'
+              ctx.fillStyle = colorSignal.trim()
               ctx.font = '9px Arial'
               ctx.fillText(signal.description || signal.category, x + 8, y + 4)
             }
@@ -246,7 +257,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       
       // Draw frequency scale
       if (frequencies && frequencies.length > 0) {
-        ctx.fillStyle = '#999'
+        ctx.fillStyle = colorMuted.trim()
         ctx.font = '12px Arial'
         const numLabels = 5
         for (let i = 0; i <= numLabels; i++) {
@@ -299,10 +310,10 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
         const power = spectrum[freqIndex]
         
         // Draw tooltip
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'
+        ctx.fillStyle = colorTooltip.trim()
         ctx.fillRect(mousePos.x + 10, mousePos.y - 40, 150, 35)
         
-        ctx.fillStyle = '#ffffff'
+        ctx.fillStyle = colorText.trim()
         ctx.font = '11px Arial'
         ctx.fillText(`Freq: ${formatFrequency(freq)}`, mousePos.x + 15, mousePos.y - 25)
         ctx.fillText(`Power: ${power.toFixed(1)} dB`, mousePos.x + 15, mousePos.y - 12)
@@ -310,12 +321,12 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
     }
 
     // Draw labels
-    ctx.fillStyle = '#ffffff'
+    ctx.fillStyle = colorText.trim()
     ctx.font = '14px Arial'
     ctx.fillText('Power (dB)', 10, 20)
     
     // Draw instructions
-    ctx.fillStyle = '#666'
+    ctx.fillStyle = colorMuted.trim()
     ctx.font = '11px Arial'
     ctx.fillText('Click to tune | Drag to select bandwidth', 10, height - 25)
 
@@ -324,7 +335,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       const minPower = Math.min(...spectrumData.spectrum)
       const maxPower = Math.max(...spectrumData.spectrum)
       
-      ctx.fillStyle = '#666'
+      ctx.fillStyle = colorMuted.trim()
       ctx.font = '12px Arial'
       ctx.fillText(`${maxPower.toFixed(0)} dB`, 10, 35)
       ctx.fillText(`${minPower.toFixed(0)} dB`, 10, height - 40)
