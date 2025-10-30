@@ -51,6 +51,9 @@
   padding: 1rem 2rem;
   background-color: var(--panel-bg);
   border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
 }
 
 .app-header h1 {
