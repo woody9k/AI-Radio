@@ -14,6 +14,8 @@ const Controls = ({
   const [gain, setGain] = useState('auto')
   const [sampleRate, setSampleRate] = useState(2048000) // 2.048 MS/s
   const [bandwidth, setBandwidth] = useState('')
+  const [bandwidthMode, setBandwidthMode] = useState('auto') // 'auto' | 'preset' | 'custom'
+  const [customBandwidthByMode, setCustomBandwidthByMode] = useState({ WFM: 200000, NFM: 12500, AM: 9000, SSB: 2400 })
   const [agcEnabled, setAgcEnabled] = useState(false)
   const [squelchEnabled, setSquelchEnabled] = useState(false)
   const [squelchThreshold, setSquelchThreshold] = useState(-120)
@@ -42,8 +44,45 @@ const Controls = ({
 
   // Wheel digit handler removed
 
+  const presetsByMode = {
+    WFM: [150000, 180000, 200000, 220000, 250000],
+    NFM: [8000, 10000, 12500, 15000],
+    AM: [6000, 8000, 9000, 10000, 12000],
+    SSB: [2000, 2200, 2400, 2800, 3000],
+  }
+
+  const rangesByMode = {
+    WFM: { min: 120000, max: 300000 },
+    NFM: { min: 6000, max: 20000 },
+    AM: { min: 5000, max: 15000 },
+    SSB: { min: 1500, max: 3500 },
+  }
+
+  const getDefaultBandwidth = (m) => (m === 'WFM' ? 200000 : m === 'NFM' ? 12500 : m === 'AM' ? 9000 : 2400)
+
+  const clampBandwidthForMode = (m, value) => {
+    const { min, max } = rangesByMode[m] || { min: 1000, max: 500000 }
+    const v = Math.round(value || 0)
+    return Math.max(min, Math.min(max, v))
+  }
+
   const handleModeChange = (e) => {
-    setMode(e.target.value)
+    const nextMode = e.target.value
+    // Persist custom bandwidth for current mode
+    if (bandwidthMode === 'custom' && mode) {
+      setCustomBandwidthByMode((prev) => ({ ...prev, [mode]: clampBandwidthForMode(mode, parseFloat(bandwidth) || prev[mode]) }))
+    }
+    setMode(nextMode)
+    // Update bandwidth based on selection for new mode
+    if (bandwidthMode === 'auto') {
+      setBandwidth(String(getDefaultBandwidth(nextMode)))
+    } else if (bandwidthMode === 'preset') {
+      // If previous preset not valid for new mode, pick default
+      setBandwidth(String(getDefaultBandwidth(nextMode)))
+    } else if (bandwidthMode === 'custom') {
+      const saved = customBandwidthByMode[nextMode]
+      setBandwidth(String(clampBandwidthForMode(nextMode, saved || getDefaultBandwidth(nextMode))))
+    }
   }
 
   const handleGainChange = (e) => {
@@ -56,9 +95,29 @@ const Controls = ({
     setSampleRate(value)
   }
 
-  const handleBandwidthChange = (e) => {
+  const handleBandwidthPresetChange = (e) => {
     const value = e.target.value
-    setBandwidth(value)
+    if (value === 'auto') {
+      setBandwidthMode('auto')
+      setBandwidth(String(getDefaultBandwidth(mode)))
+      return
+    }
+    if (value === 'custom') {
+      setBandwidthMode('custom')
+      const saved = customBandwidthByMode[mode]
+      setBandwidth(String(clampBandwidthForMode(mode, saved || getDefaultBandwidth(mode))))
+      return
+    }
+    // preset value
+    setBandwidthMode('preset')
+    setBandwidth(String(clampBandwidthForMode(mode, parseFloat(value))))
+  }
+
+  const handleCustomBandwidthChange = (e) => {
+    const raw = parseFloat(e.target.value)
+    const clamped = clampBandwidthForMode(mode, isNaN(raw) ? 0 : raw)
+    setBandwidth(String(clamped))
+    setCustomBandwidthByMode((prev) => ({ ...prev, [mode]: clamped }))
   }
 
   const handleAgcToggle = (e) => {
@@ -89,7 +148,7 @@ const Controls = ({
       bias_t: biasT
     }
     
-    if (bandwidth) {
+    if (bandwidthMode !== 'auto' && bandwidth) {
       settings.bandwidth = parseFloat(bandwidth)
     }
     
@@ -138,7 +197,7 @@ const Controls = ({
               </label>
             </div>
 
-            {/* Mode + Bandwidth */}
+            {/* Mode + Bandwidth (linked with presets and Auto) */}
             <div className="mb-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
               <div>
                 <label className="block text-sm text-gray-300 mb-1">Mode</label>
@@ -156,14 +215,27 @@ const Controls = ({
               </div>
               <div>
                 <label className="block text-sm text-gray-300 mb-1">Filter/Bandwidth</label>
-                <input
-                  type="number"
-                  value={bandwidth}
-                  onChange={handleBandwidthChange}
-                  placeholder="Auto"
+                <select
+                  value={bandwidthMode === 'auto' ? 'auto' : (bandwidthMode === 'custom' ? 'custom' : String(bandwidth))}
+                  onChange={handleBandwidthPresetChange}
                   className="input w-full"
                   style={{ padding: '4px 6px', fontSize: '12px' }}
-                />
+                >
+                  <option value="auto">Auto ({mode} {Math.round(getDefaultBandwidth(mode)/1000)} kHz)</option>
+                  {presetsByMode[mode].map((v) => (
+                    <option key={v} value={v}>{Math.round(v/1000)} kHz</option>
+                  ))}
+                  <option value="custom">Custom…</option>
+                </select>
+                {bandwidthMode === 'custom' && (
+                  <input
+                    type="number"
+                    value={bandwidth}
+                    onChange={handleCustomBandwidthChange}
+                    className="input w-full"
+                    style={{ padding: '4px 6px', fontSize: '12px', marginTop: 6 }}
+                  />
+                )}
               </div>
             </div>
 
