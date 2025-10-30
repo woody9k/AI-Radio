@@ -134,6 +134,8 @@
   flex: 1;
   /* Allow the whole page to scroll instead of inner frames */
   overflow: visible;
+  /* Ensure content clears sticky header visually on all browsers */
+  padding-top: 16px;
 }
 
 .left-panel {
@@ -144,6 +146,7 @@
   flex-direction: column;
   /* Avoid inner scrollbars; let page scroll */
   overflow: visible;
+  padding-top: 16px; /* Prevent first card from sitting under header/top bar */
 }
 
 .main-content {
