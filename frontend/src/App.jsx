@@ -286,7 +286,7 @@ function App() {
         </div>
       </header>
 
-      <div style={{ padding: 8, borderBottom: '1px solid #eee', display: 'flex', gap: 8 }}>
+      <div className="top-nav">
         <button onClick={() => setActivePane('radio')}>Radio</button>
         <button onClick={() => setActivePane('chat')}>AI Chat</button>
         <button onClick={() => setActivePane('analysis')}>Analysis</button>
