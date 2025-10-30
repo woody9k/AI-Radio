@@ -10,6 +10,8 @@
   --signal: #3b82f6;
   --signal-unknown: #ef4444;
   --tooltip-bg: rgba(0,0,0,0.8);
+  --header-h: 64px;
+  --nav-h: 44px;
 }
 
 [data-theme="minimal"] {
@@ -39,7 +41,7 @@
 .app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  min-height: 100vh;
   background-color: var(--bg);
   color: var(--text);
 }
@@ -54,6 +56,7 @@
   position: sticky;
   top: 0;
   z-index: 1000;
+  height: var(--header-h);
 }
 
 .app-header h1 {
@@ -68,7 +71,11 @@
   display: flex;
   gap: 8px;
   background-color: var(--panel-bg);
-  min-height: 44px; /* reserve space even if buttons hidden/disabled */
+  min-height: var(--nav-h); /* reserve space even if buttons hidden/disabled */
+  height: var(--nav-h);
+  position: sticky;
+  top: var(--header-h);
+  z-index: 900;
 }
 
 .connection-status {
@@ -130,12 +137,11 @@
 }
 
 .app-content {
-  display: flex;
+  display: grid;
+  grid-template-columns: 260px 1fr 280px;
   flex: 1;
   /* Allow the whole page to scroll instead of inner frames */
   overflow: visible;
-  /* Ensure content clears sticky header visually on all browsers */
-  padding-top: 32px;
 }
 
 .left-panel {
@@ -146,7 +152,6 @@
   flex-direction: column;
   /* Avoid inner scrollbars; let page scroll */
   overflow: visible;
-  padding-top: 32px; /* Prevent first card from sitting under header/top bar */
 }
 
 .main-content {
@@ -154,6 +159,8 @@
   display: flex;
   flex-direction: column;
   background-color: var(--bg);
+  min-width: 0;
+  position: relative;
 }
 
 .right-panel {
@@ -175,7 +182,7 @@
 
 @media (max-width: 768px) {
   .app-content {
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
   
   .left-panel,

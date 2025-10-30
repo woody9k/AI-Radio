@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { clampFrequency, getDeviceCaps } from '../api/deviceCapabilities'
+import { getDeviceCaps } from '../api/deviceCapabilities'
 
 const Controls = ({ 
   deviceConnected, 
@@ -14,6 +14,8 @@ const Controls = ({
   const [gain, setGain] = useState('auto')
   const [sampleRate, setSampleRate] = useState(2048000) // 2.048 MS/s
   const [bandwidth, setBandwidth] = useState('')
+  const [bandwidthMode, setBandwidthMode] = useState('auto') // 'auto' | 'preset' | 'custom'
+  const [customBandwidthByMode, setCustomBandwidthByMode] = useState({ WFM: 200000, NFM: 12500, AM: 9000, SSB: 2400 })
   const [agcEnabled, setAgcEnabled] = useState(false)
   const [squelchEnabled, setSquelchEnabled] = useState(false)
   const [squelchThreshold, setSquelchThreshold] = useState(-120)
@@ -34,46 +36,53 @@ const Controls = ({
 
   const deviceCaps = useMemo(() => getDeviceCaps(deviceInfo || {}), [deviceInfo])
 
-  const handleFrequencyChange = (e) => {
-    const raw = parseFloat(e.target.value)
-    const value = isNaN(raw) ? 0 : raw
-    setFrequency(clampFrequency(value, deviceInfo))
+  // Frequency is now adjusted via Spectrum header controls
+
+  // Step handlers removed
+
+  // Removed local digit controls in favor of Spectrum header
+
+  // Wheel digit handler removed
+
+  const presetsByMode = {
+    WFM: [150000, 180000, 200000, 220000, 250000],
+    NFM: [8000, 10000, 12500, 15000],
+    AM: [6000, 8000, 9000, 10000, 12000],
+    SSB: [2000, 2200, 2400, 2800, 3000],
   }
 
-  const handleFrequencyStepAtPower = (power) => {
-    const step = Math.pow(10, power)
-    setFrequency((f) => clampFrequency(f + step, deviceInfo))
+  const rangesByMode = {
+    WFM: { min: 120000, max: 300000 },
+    NFM: { min: 6000, max: 20000 },
+    AM: { min: 5000, max: 15000 },
+    SSB: { min: 1500, max: 3500 },
   }
 
-  const handleFrequencyDownAtPower = (power) => {
-    const step = Math.pow(10, power)
-    setFrequency((f) => clampFrequency(f - step, deviceInfo))
-  }
+  const getDefaultBandwidth = (m) => (m === 'WFM' ? 200000 : m === 'NFM' ? 12500 : m === 'AM' ? 9000 : 2400)
 
-  const freqDigits = useMemo(() => {
-    const f = Math.max(0, Math.round(frequency))
-    // Build digit groups: GHz, MHz, kHz, Hz
-    const pad = (n, w) => n.toString().padStart(w, '0')
-    const ghz = Math.floor(f / 1e9)
-    const mhz = Math.floor((f % 1e9) / 1e6)
-    const khz = Math.floor((f % 1e6) / 1e3)
-    const hz = Math.floor(f % 1e3)
-    return {
-      ghz,
-      mhz: pad(mhz, 3),
-      khz: pad(khz, 3),
-      hz: pad(hz, 3),
-    }
-  }, [frequency])
-
-  const onWheelDigit = (power) => (e) => {
-    e.preventDefault()
-    if (e.deltaY < 0) handleFrequencyStepAtPower(power)
-    else handleFrequencyDownAtPower(power)
+  const clampBandwidthForMode = (m, value) => {
+    const { min, max } = rangesByMode[m] || { min: 1000, max: 500000 }
+    const v = Math.round(value || 0)
+    return Math.max(min, Math.min(max, v))
   }
 
   const handleModeChange = (e) => {
-    setMode(e.target.value)
+    const nextMode = e.target.value
+    // Persist custom bandwidth for current mode
+    if (bandwidthMode === 'custom' && mode) {
+      setCustomBandwidthByMode((prev) => ({ ...prev, [mode]: clampBandwidthForMode(mode, parseFloat(bandwidth) || prev[mode]) }))
+    }
+    setMode(nextMode)
+    // Update bandwidth based on selection for new mode
+    if (bandwidthMode === 'auto') {
+      setBandwidth(String(getDefaultBandwidth(nextMode)))
+    } else if (bandwidthMode === 'preset') {
+      // If previous preset not valid for new mode, pick default
+      setBandwidth(String(getDefaultBandwidth(nextMode)))
+    } else if (bandwidthMode === 'custom') {
+      const saved = customBandwidthByMode[nextMode]
+      setBandwidth(String(clampBandwidthForMode(nextMode, saved || getDefaultBandwidth(nextMode))))
+    }
   }
 
   const handleGainChange = (e) => {
@@ -86,9 +95,29 @@ const Controls = ({
     setSampleRate(value)
   }
 
-  const handleBandwidthChange = (e) => {
+  const handleBandwidthPresetChange = (e) => {
     const value = e.target.value
-    setBandwidth(value)
+    if (value === 'auto') {
+      setBandwidthMode('auto')
+      setBandwidth(String(getDefaultBandwidth(mode)))
+      return
+    }
+    if (value === 'custom') {
+      setBandwidthMode('custom')
+      const saved = customBandwidthByMode[mode]
+      setBandwidth(String(clampBandwidthForMode(mode, saved || getDefaultBandwidth(mode))))
+      return
+    }
+    // preset value
+    setBandwidthMode('preset')
+    setBandwidth(String(clampBandwidthForMode(mode, parseFloat(value))))
+  }
+
+  const handleCustomBandwidthChange = (e) => {
+    const raw = parseFloat(e.target.value)
+    const clamped = clampBandwidthForMode(mode, isNaN(raw) ? 0 : raw)
+    setBandwidth(String(clamped))
+    setCustomBandwidthByMode((prev) => ({ ...prev, [mode]: clamped }))
   }
 
   const handleAgcToggle = (e) => {
@@ -119,7 +148,7 @@ const Controls = ({
       bias_t: biasT
     }
     
-    if (bandwidth) {
+    if (bandwidthMode !== 'auto' && bandwidth) {
       settings.bandwidth = parseFloat(bandwidth)
     }
     
@@ -145,7 +174,7 @@ const Controls = ({
   const deviceSupportsBiasT = deviceInfo?.capabilities?.bias_t || false
 
   return (
-    <div className="card" style={{ padding: '8px' }}>
+    <div className="card" style={{ padding: '8px', width: '100%', boxSizing: 'border-box' }}>
       <h3 className="text-lg font-bold mb-4">Controls</h3>
       
       <div>
@@ -161,37 +190,14 @@ const Controls = ({
               Radio Controls
             </div>
 
-            {/* Frequency (SDR# style per-digit stepper) */}
+            {/* Frequency section now controlled from Spectrum header; show info only */}
             <div className="mb-3">
               <label className="block text-sm text-gray-300 mb-1">
                 Frequency: {formatFrequency(frequency)} (range {formatFrequency(deviceCaps.minHz)} - {formatFrequency(deviceCaps.maxHz)})
               </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div className="digit-strip" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {/* GHz group */}
-                  <DigitGroup label="GHz" value={freqDigits.ghz} powers={[9]} onWheel={onWheelDigit} onUp={handleFrequencyStepAtPower} onDown={handleFrequencyDownAtPower} />
-                  <span style={{ opacity: 0.6 }}>.</span>
-                  {/* MHz group */}
-                  <DigitGroup label="MHz" value={freqDigits.mhz} powers={[8,7,6]} onWheel={onWheelDigit} onUp={handleFrequencyStepAtPower} onDown={handleFrequencyDownAtPower} />
-                  <span style={{ opacity: 0.6 }}>.</span>
-                  {/* kHz group */}
-                  <DigitGroup label="kHz" value={freqDigits.khz} powers={[5,4,3]} onWheel={onWheelDigit} onUp={handleFrequencyStepAtPower} onDown={handleFrequencyDownAtPower} />
-                  <span style={{ opacity: 0.6 }}>.</span>
-                  {/* Hz group */}
-                  <DigitGroup label="Hz" value={freqDigits.hz} powers={[2,1,0]} onWheel={onWheelDigit} onUp={handleFrequencyStepAtPower} onDown={handleFrequencyDownAtPower} />
-                </div>
-                <input
-                  type="number"
-                  value={frequency}
-                  onChange={handleFrequencyChange}
-                  className="input"
-                  style={{ width: 160, padding: '4px 6px', fontSize: '12px' }}
-                  step="1000"
-                />
-              </div>
             </div>
 
-            {/* Mode + Bandwidth */}
+            {/* Mode + Bandwidth (linked with presets and Auto) */}
             <div className="mb-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
               <div>
                 <label className="block text-sm text-gray-300 mb-1">Mode</label>
@@ -209,14 +215,27 @@ const Controls = ({
               </div>
               <div>
                 <label className="block text-sm text-gray-300 mb-1">Filter/Bandwidth</label>
-                <input
-                  type="number"
-                  value={bandwidth}
-                  onChange={handleBandwidthChange}
-                  placeholder="Auto"
+                <select
+                  value={bandwidthMode === 'auto' ? 'auto' : (bandwidthMode === 'custom' ? 'custom' : String(bandwidth))}
+                  onChange={handleBandwidthPresetChange}
                   className="input w-full"
                   style={{ padding: '4px 6px', fontSize: '12px' }}
-                />
+                >
+                  <option value="auto">Auto ({mode} {Math.round(getDefaultBandwidth(mode)/1000)} kHz)</option>
+                  {presetsByMode[mode].map((v) => (
+                    <option key={v} value={v}>{Math.round(v/1000)} kHz</option>
+                  ))}
+                  <option value="custom">Custom…</option>
+                </select>
+                {bandwidthMode === 'custom' && (
+                  <input
+                    type="number"
+                    value={bandwidth}
+                    onChange={handleCustomBandwidthChange}
+                    className="input w-full"
+                    style={{ padding: '4px 6px', fontSize: '12px', marginTop: 6 }}
+                  />
+                )}
               </div>
             </div>
 
@@ -358,36 +377,6 @@ const Controls = ({
   )
 }
 
-function DigitGroup({ label, value, powers, onWheel, onUp, onDown }) {
-  const digits = String(value).split('')
-  return (
-    <div className="digit-group" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-      {digits.map((d, i) => (
-        <div key={`${label}-${i}`} className="digit" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <button
-            className="btn btn-secondary"
-            style={{ padding: '0 4px', lineHeight: '12px', fontSize: 10, height: 16, minWidth: 18 }}
-            onClick={() => onUp(powers[i])}
-            onMouseDown={(e) => e.preventDefault()}
-            title={`+${Math.pow(10, powers[i]).toLocaleString()} Hz`}
-          >▲</button>
-          <div
-            onWheel={onWheel(powers[i])}
-            style={{ padding: '2px 4px', fontFamily: 'monospace', fontSize: 14, minWidth: 10, textAlign: 'center' }}
-            title={`${label} digit`}
-          >{d}</div>
-          <button
-            className="btn btn-secondary"
-            style={{ padding: '0 4px', lineHeight: '12px', fontSize: 10, height: 16, minWidth: 18 }}
-            onClick={() => onDown(powers[i])}
-            onMouseDown={(e) => e.preventDefault()}
-            title={`-${Math.pow(10, powers[i]).toLocaleString()} Hz`}
-          >▼</button>
-        </div>
-      ))}
-      <span style={{ fontSize: 10, opacity: 0.6, marginLeft: 4 }}>{label}</span>
-    </div>
-  )
-}
+// Local DigitGroup removed; stepper moved to Spectrum header
 
 export default Controls
