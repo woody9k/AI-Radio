@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react'
 
 const Presets = ({ deviceConnected, onApplyPreset }) => {
   const [presets, setPresets] = useState([])
-  const [categories, setCategories] = useState([])
-  const [selectedCategory, setSelectedCategory] = useState('')
+  const [selectedCategory] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -73,7 +72,7 @@ const Presets = ({ deviceConnected, onApplyPreset }) => {
       
       if (data.success) {
         setPresets(data.presets)
-        setCategories(data.categories)
+        // categories list is not displayed in current UI
       }
     } catch (error) {
       console.error('Error fetching presets:', error)

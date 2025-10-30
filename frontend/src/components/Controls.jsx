@@ -12,7 +12,7 @@ const Controls = ({
   const [gain, setGain] = useState('auto')
   const [sampleRate, setSampleRate] = useState(2048000) // 2.048 MS/s
   const [bandwidth, setBandwidth] = useState('')
-  const [gainValue, setGainValue] = useState(0)
+  // gainValue no longer used; control gain via select only
 
   useEffect(() => {
     if (deviceInfo) {
@@ -31,16 +31,10 @@ const Controls = ({
   const handleGainChange = (e) => {
     const value = e.target.value
     setGain(value)
-    if (value !== 'auto') {
-      setGainValue(parseFloat(value))
-    }
+    // numeric gain handled as string value passed to backend
   }
 
-  const handleGainValueChange = (e) => {
-    const value = parseFloat(e.target.value)
-    setGainValue(value)
-    setGain(value.toString())
-  }
+  // removed unused handleGainValueChange
 
   const handleSampleRateChange = (e) => {
     const value = parseFloat(e.target.value)

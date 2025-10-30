@@ -111,11 +111,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
     }
   }
 
-  const handleSignalClick = (signal) => {
-    if (onTuneToFrequency) {
-      onTuneToFrequency(signal.frequency, signal.bandwidth)
-    }
-  }
+  // click handling occurs via mouse events above
 
   useEffect(() => {
     if (!spectrumData || !canvasRef.current) return
@@ -179,7 +175,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
 
       // Draw detected signals
       if (spectrumData.signals) {
-        spectrumData.signals.forEach((signal, idx) => {
+        spectrumData.signals.forEach((signal) => {
           const signalIndex = frequencies.findIndex(f => 
             Math.abs(f - (signal.frequency - frequencies[0])) < 1000
           )

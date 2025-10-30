@@ -12,7 +12,7 @@ const SMeter = ({ spectrumData }) => {
     try {
       // Calculate average power from spectrum
       const spectrum = spectrumData.spectrum
-      const avgPower = spectrum.reduce((sum, val) => sum + val, 0) / spectrum.length
+      // const avgPower = spectrum.reduce((sum, val) => sum + val, 0) / spectrum.length
 
       // Find peak power
       const maxPower = Math.max(...spectrum)

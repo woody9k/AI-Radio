@@ -21,7 +21,7 @@ function App() {
   const [deviceInfo, setDeviceInfo] = useState(null)
   const [aiDetections, setAiDetections] = useState([])
   const [viewMode, setViewMode] = useState('beginner') // 'beginner' or 'advanced'
-  const [activePane, setActivePane] = useState('radio') // 'radio' | 'chat' | 'settings'
+  const [activePane, setActivePane] = useState('radio') // 'radio' | 'chat' | 'settings' | 'analysis'
 
   useEffect(() => {
     // Initialize WebSocket connection
@@ -106,6 +106,25 @@ function App() {
       clearInterval(healthCheckInterval)
     }
   }, [])
+
+  const fetchDevices = async () => {
+    try {
+      const response = await fetch('/api/devices')
+      const data = await response.json()
+      if (data.success) {
+        // If a device is already connected backend-side, reflect it in UI
+        const connected = Object.values(data.device_info || {}).some(info => info.connected)
+        setDeviceConnected(!!connected)
+        if (connected) {
+          // choose first connected device info
+          const first = Object.values(data.device_info)[0]
+          setDeviceInfo(first)
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch devices:', e)
+    }
+  }
 
   const connectDevice = async (deviceIndex) => {
     try {
@@ -244,6 +263,7 @@ function App() {
       <div style={{ padding: 8, borderBottom: '1px solid #eee', display: 'flex', gap: 8 }}>
         <button onClick={() => setActivePane('radio')}>Radio</button>
         <button onClick={() => setActivePane('chat')}>AI Chat</button>
+        <button onClick={() => setActivePane('analysis')}>Analysis</button>
         <button onClick={() => setActivePane('settings')}>Settings</button>
       </div>
 
@@ -251,6 +271,16 @@ function App() {
         {activePane === 'chat' && (
           <div className="main-content" style={{ width: '100%' }}>
             <ChatPanel />
+          </div>
+        )}
+        {activePane === 'analysis' && (
+          <div className="main-content" style={{ width: '100%' }}>
+            <AIPanel
+              detections={aiDetections}
+              streaming={streaming}
+              viewMode={viewMode}
+              onListenToSignal={listenToSignal}
+            />
           </div>
         )}
         {activePane === 'settings' && (
@@ -299,26 +329,7 @@ function App() {
         </div>
 
         <div className="right-panel">
-          <div className="view-toggle">
-            <button 
-              className={viewMode === 'beginner' ? 'active' : ''}
-              onClick={() => setViewMode('beginner')}
-            >
-              Beginner
-            </button>
-            <button 
-              className={viewMode === 'advanced' ? 'active' : ''}
-              onClick={() => setViewMode('advanced')}
-            >
-              Advanced
-            </button>
-          </div>
-          <AIPanel
-            detections={aiDetections}
-            streaming={streaming}
-            viewMode={viewMode}
-            onListenToSignal={listenToSignal}
-          />
+          <ChatPanel />
         </div>
         </>
         )}

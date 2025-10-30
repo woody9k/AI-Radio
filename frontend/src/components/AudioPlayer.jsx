@@ -9,7 +9,7 @@ const AudioPlayer = ({ socket, deviceConnected }) => {
   
   const audioContextRef = useRef(null)
   const gainNodeRef = useRef(null)
-  const audioBufferQueueRef = useRef([])
+  // queue not used currently; stream plays live
   const nextPlayTimeRef = useRef(0)
   const audioSampleRateRef = useRef(48000)
   
@@ -49,7 +49,7 @@ const AudioPlayer = ({ socket, deviceConnected }) => {
         return
       }
       
-      const { samples, sample_rate, mode } = data
+      const { samples, sample_rate } = data
       audioSampleRateRef.current = sample_rate || 48000
       
       // Create audio buffer

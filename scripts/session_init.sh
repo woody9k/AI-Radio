@@ -52,7 +52,11 @@ py_fail=0; js_fail=0
 
 # Ruff
 if ! ruff --version >/dev/null 2>&1; then pip install ruff >/dev/null 2>&1; fi
-ruff . || py_fail=1
+if $auto_fix; then
+  ruff check . --fix || true
+else
+  ruff check . || py_fail=1
+fi
 
 # Black (check)
 if ! black --version >/dev/null 2>&1; then pip install black >/dev/null 2>&1; fi
