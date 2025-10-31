@@ -14,6 +14,11 @@
   --nav-h: 44px;
 }
 
+/* Ensure browser scroll positioning accounts for sticky header+nav */
+html {
+  scroll-padding-top: calc(var(--header-h) + var(--nav-h));
+}
+
 [data-theme="minimal"] {
   --bg: #0d0d0d; --panel-bg: #151515; --text: #e5e7eb; --muted: #9ca3af;
   --border: #333; --accent: #3b82f6; --grid: #2a2a2a; --spectrum: #b0b6bf;

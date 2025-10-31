@@ -59,11 +59,11 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
   }, [currentFrequency])
 
   const clampFrequency = (value) => {
-    if (!spectrumData?.frequencies || spectrumData.frequencies.length === 0) return Math.max(0, Math.round(value || 0))
-    const minF = Math.min(...spectrumData.frequencies)
-    const maxF = Math.max(...spectrumData.frequencies)
-    const v = Math.max(minF, Math.min(maxF, Math.round(value || 0)))
-    return v
+    // Clamp to a broad RF range, not the current FFT span
+    const MIN_RF = 0
+    const MAX_RF = 6e9 // 6 GHz upper guard; adjust if device caps are known
+    const v = Math.round(value || 0)
+    return Math.max(MIN_RF, Math.min(MAX_RF, v))
   }
 
   const handleFrequencyStepAtPower = (power) => {

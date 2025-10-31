@@ -25,6 +25,9 @@ function App() {
   const refreshingDevicesRef = useRef(false)
 
   useEffect(() => {
+    // Prevent Chrome scroll restoration from landing content under sticky header
+    try { window.scrollTo(0, 0) } catch (_) {}
+
     // Initialize WebSocket connection
     const newSocket = io('http://localhost:5000')
     
