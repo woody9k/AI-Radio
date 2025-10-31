@@ -453,6 +453,19 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
 
   const spectrumRafRef = useRef(0)
   const fpsRef = useRef({ last: (typeof performance !== 'undefined' ? performance.now() : Date.now()), frames: 0, fps: 0 })
+  const initialFittedRef = useRef(false)
+
+  // When streaming starts, perform an Auto Once fit, then hold Fixed
+  useEffect(() => {
+    if (streaming && !initialFittedRef.current) {
+      setScaleMode('auto_once')
+      heldScaleRef.current = null
+      if (autoOnceTimerRef.current) { clearTimeout(autoOnceTimerRef.current); autoOnceTimerRef.current = 0 }
+    }
+    if (!streaming) {
+      initialFittedRef.current = false
+    }
+  }, [streaming])
   useEffect(() => {
     if (!spectrumData || !canvasRef.current) return
 
@@ -532,27 +545,42 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
         maxPower = top
         minPower = bottom
       } else if (scaleMode === 'auto_once') {
-        // Accumulate min/max for ~1s then convert to fixed range/offset
-        if (!heldScaleRef.current) heldScaleRef.current = { min: rawMin, max: rawMax }
-        heldScaleRef.current.min = Math.min(heldScaleRef.current.min, rawMin)
-        heldScaleRef.current.max = Math.max(heldScaleRef.current.max, rawMax)
+        // Accumulate robust min/max for ~1s using percentiles and margins, then convert to fixed
+        if (!heldScaleRef.current) heldScaleRef.current = { min: rawMin, max: rawMax, samples: [] }
+        // Collect a thin sample to estimate percentiles
+        if (slice.length > 0) {
+          const step = Math.max(1, Math.floor(slice.length / 128))
+          for (let i = 0; i < slice.length; i += step) heldScaleRef.current.samples.push(slice[i])
+          if (heldScaleRef.current.samples.length > 2048) heldScaleRef.current.samples.splice(0, heldScaleRef.current.samples.length - 2048)
+        }
         if (!autoOnceTimerRef.current) {
           autoOnceTimerRef.current = window.setTimeout(() => {
+            const arr = (heldScaleRef.current.samples || []).slice().sort((a,b)=>a-b)
+            const pct = (p)=>{ if (!arr.length) return 0; const idx = Math.max(0, Math.min(arr.length - 1, Math.floor((p/100)*arr.length))); return arr[idx] }
+            const p10 = pct(10)
+            const p90 = pct(90)
             const marginTop = 5, marginBottom = 5
-            const top = heldScaleRef.current.max + marginTop
-            const bottom = heldScaleRef.current.min - marginBottom
-            setRangeDb(Math.max(20, Math.min(140, top - bottom)))
-            setOffsetDb(top - (-30))
+            const topCandidate = p90 + marginTop
+            const top = Math.min(-10, topCandidate)
+            let range = Math.max(20, Math.min(140, 80))
+            let bottom = top - range
+            if (bottom > p10 - marginBottom) {
+              range = Math.min(140, top - (p10 - marginBottom))
+              bottom = top - range
+            }
+            setRangeDb(range)
+            setOffsetDb(Math.min(20, top - (-30)))
             setScaleMode('fixed')
             heldScaleRef.current = null
             autoOnceTimerRef.current = 0
+            initialFittedRef.current = true
           }, 1000)
         }
-        // While capturing, show a smoothed preview
-        const topPreview = Math.min(-10, (heldScaleRef.current.max + 5))
-        const bottomPreview = (heldScaleRef.current.min - 5)
-        maxPower = topPreview
-        minPower = bottomPreview
+        // Live preview while capturing
+        const previewTop = Math.min(-10, rawMax + 5)
+        const previewBottom = rawMin - 5
+        maxPower = previewTop
+        minPower = previewBottom
       } else if (scaleMode === 'auto_smooth') {
         const alpha = 0.2
         if (!autoScaleStateRef.current) autoScaleStateRef.current = { min: rawMin, max: rawMax }
@@ -589,6 +617,19 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
         }
       }
       ctx.stroke()
+      // Visibility guard: gently nudge offset if many samples clipped above/below in Fixed mode
+      if (scaleMode === 'fixed') {
+        let above = 0, below = 0
+        for (let i = 0; i < slice.length; i++) {
+          const v = slice[i]
+          if (v > maxPower) above++
+          if (v < minPower) below++
+        }
+        const fracAbove = above / slice.length
+        const fracBelow = below / slice.length
+        if (fracAbove > 0.3) setOffsetDb(o => Math.max(-60, o - 2))
+        if (fracBelow > 0.3) setOffsetDb(o => Math.min(20, o + 2))
+      }
 
       // Average trace
       if (avgEnabled) {
