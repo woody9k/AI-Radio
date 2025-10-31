@@ -24,6 +24,13 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
   const [peakEnabled, setPeakEnabled] = useState(false)
   const avgBufferRef = useRef(null)
   const peakBufferRef = useRef(null)
+  // SDR#-style scale controls
+  const [rangeDb, setRangeDb] = useState(80) // visible span
+  const [offsetDb, setOffsetDb] = useState(36) // default ~90% towards top: top = -30 + 36 = +6 dBFS
+  const [scaleMode, setScaleMode] = useState('fixed') // 'fixed' | 'auto_once' | 'auto_smooth'
+  const autoScaleStateRef = useRef(null) // { min, max }
+  const heldScaleRef = useRef(null) // { min, max } for auto_once hold
+  const autoOnceTimerRef = useRef(0)
   const prevSliceRef = useRef(null)
   const lastRetuneRef = useRef(0)
   // Waterfall polish
@@ -103,6 +110,28 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       return `${freq.toFixed(0)} Hz`
     }
   }
+
+  // Persist scale settings per session
+  useEffect(() => {
+    try {
+      const key = 'spectrumScale.v1'
+      const payload = { rangeDb, offsetDb: Math.min(40, offsetDb), scaleMode }
+      localStorage.setItem(key, JSON.stringify(payload))
+    } catch (_) {}
+  }, [rangeDb, offsetDb, scaleMode])
+
+  useEffect(() => {
+    try {
+      const key = 'spectrumScale.v1'
+      const raw = localStorage.getItem(key)
+      if (raw) {
+        const obj = JSON.parse(raw)
+        if (typeof obj.rangeDb === 'number') setRangeDb(obj.rangeDb)
+        if (typeof obj.offsetDb === 'number') setOffsetDb(obj.offsetDb)
+        if (typeof obj.scaleMode === 'string') setScaleMode(obj.scaleMode)
+      }
+    } catch (_) {}
+  }, [])
 
   // Fetch high-res zoom data when span < threshold
   useEffect(() => {
@@ -328,6 +357,13 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       e.preventDefault()
       const rect = canvas.getBoundingClientRect()
       const cursor = (e.clientX - rect.left) / rect.width
+      // Wheel over left axis adjusts offset (fine control), Shift = faster
+      if (e.clientX - rect.left < 60) {
+        const delta = (e.deltaY > 0 ? -1 : 1) * (e.shiftKey ? 5 : 1)
+        setOffsetDb(prev => prev + delta)
+        setScaleMode('fixed')
+        return
+      }
       const range = viewRange.end - viewRange.start
       if (e.altKey) {
         // Alt + wheel: fine pan left/right
@@ -484,11 +520,57 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       } else {
         prevSliceRef.current = slice
       }
-      const autoMin = Math.min(...slice)
-      const autoMax = Math.max(...slice)
-      // When autoscale disabled via Range slider, fix top at -30 dBFS and bottom at dbfsBottom
-      const minPower = autoScale ? autoMin : dbfsBottom
-      const maxPower = autoScale ? autoMax : -30
+      const rawMin = Math.min(...slice)
+      const rawMax = Math.max(...slice)
+      let minPower = rawMin
+      let maxPower = rawMax
+      // Scale modes: fixed (Range+Offset), auto_once (capture and hold), auto_smooth (EMA/hysteresis)
+      if (scaleMode === 'fixed') {
+        const desiredTop = -30 + offsetDb
+        const top = Math.min(10, desiredTop)
+        const bottom = top - rangeDb
+        maxPower = top
+        minPower = bottom
+      } else if (scaleMode === 'auto_once') {
+        // Accumulate min/max for ~1s then convert to fixed range/offset
+        if (!heldScaleRef.current) heldScaleRef.current = { min: rawMin, max: rawMax }
+        heldScaleRef.current.min = Math.min(heldScaleRef.current.min, rawMin)
+        heldScaleRef.current.max = Math.max(heldScaleRef.current.max, rawMax)
+        if (!autoOnceTimerRef.current) {
+          autoOnceTimerRef.current = window.setTimeout(() => {
+            const marginTop = 5, marginBottom = 5
+            const top = heldScaleRef.current.max + marginTop
+            const bottom = heldScaleRef.current.min - marginBottom
+            setRangeDb(Math.max(20, Math.min(140, top - bottom)))
+            setOffsetDb(top - (-30))
+            setScaleMode('fixed')
+            heldScaleRef.current = null
+            autoOnceTimerRef.current = 0
+          }, 1000)
+        }
+        // While capturing, show a smoothed preview
+        const topPreview = Math.min(10, (heldScaleRef.current.max + 5))
+        const bottomPreview = (heldScaleRef.current.min - 5)
+        maxPower = topPreview
+        minPower = bottomPreview
+      } else if (scaleMode === 'auto_smooth') {
+        const alpha = 0.2
+        if (!autoScaleStateRef.current) autoScaleStateRef.current = { min: rawMin, max: rawMax }
+        autoScaleStateRef.current.min = alpha * rawMin + (1 - alpha) * autoScaleStateRef.current.min
+        autoScaleStateRef.current.max = alpha * rawMax + (1 - alpha) * autoScaleStateRef.current.max
+        // Compute target top/bottom with margins, then slew range/offset for stability
+        const targetTop = Math.min(10, autoScaleStateRef.current.max + 5)
+        const targetBottom = autoScaleStateRef.current.min - 5
+        const targetRange = Math.max(20, Math.min(140, targetTop - targetBottom))
+        const targetOffset = Math.min(40, targetTop - (-30))
+        const beta = 0.1
+        setRangeDb(prev => prev + beta * (targetRange - prev))
+        setOffsetDb(prev => prev + beta * (targetOffset - prev))
+        const top = Math.min(10, -30 + (offsetDb + beta * (targetOffset - offsetDb)))
+        const bottom = top - (rangeDb + beta * (targetRange - rangeDb))
+        maxPower = top
+        minPower = bottom
+      }
       const powerRange = (maxPower - minPower) || 1
 
       ctx.strokeStyle = colorSpectrum.trim()
@@ -654,7 +736,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
         }
       }
 
-      // Draw left vertical axis ticks from -30 dBFS (top) to dbfsBottom (bottom)
+      // Draw left vertical axis ticks from top to bottom per scale mode
       ctx.fillStyle = colorMuted.trim()
       ctx.font = '12px Arial'
       const ticks = 8
@@ -728,10 +810,11 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       }
     }
 
-    // Draw labels
+    // Draw labels (show current scale mode)
     ctx.fillStyle = colorText.trim()
     ctx.font = '14px Arial'
-    ctx.fillText('Power (dBFS)', 10, 20)
+    const scaleLabel = (scaleMode === 'fixed') ? `Power (dBFS) • Range ${Math.round(rangeDb)} dB • Offset ${Math.round(offsetDb)} dB` : (scaleMode === 'auto_once' ? 'Power (dBFS) • Auto Once' : 'Power (dBFS) • Auto (Smooth)')
+    ctx.fillText(scaleLabel, 10, 20)
     
     // Draw instructions
     ctx.fillStyle = colorMuted.trim()
@@ -886,8 +969,8 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
               onMouseLeave={handleMouseLeave}
             />
           </div>
-          {/* Right-side vertical controls (Zoom and Range) */}
-          <div style={{ width: 80, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, height: dimensions.height }}>
+          {/* Right-side vertical controls (Zoom, Range, Offset, Modes) */}
+          <div style={{ width: 96, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, height: dimensions.height }}>
             {/* Zoom */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flex: 1 }}>
               <div style={{ color: '#ccc', fontSize: 12 }}>Zoom</div>
@@ -913,21 +996,19 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
                 })()}
               </div>
             </div>
-            {/* dBFS Range (bottom control) */}
+            {/* Range/Offset and Mode buttons */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flex: 1 }}>
               <div style={{ color: '#ccc', fontSize: 12 }}>Range</div>
-              <input
-                type="range"
-                min="-180"
-                max="-40"
-                step="1"
-                value={dbfsBottom}
-                onChange={(e)=>{ setDbfsBottom(parseFloat(e.target.value)); setAutoScale(false); }}
-                style={{ height: Math.max(80, Math.floor((dimensions.height - 40) / 2 - 20)), writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' }}
-                title="Bottom dBFS"
-              />
-              <div style={{ color: '#aaa', fontSize: 12 }}>{`Bottom: ${Math.round(dbfsBottom)} dBFS`}</div>
-              <div style={{ color: '#aaa', fontSize: 11 }}>Top fixed: -30 dBFS</div>
+              <input type="range" min="20" max="140" step="1" value={rangeDb} onChange={(e)=>{ setRangeDb(parseFloat(e.target.value)); setScaleMode('fixed') }} style={{ height: Math.max(80, Math.floor((dimensions.height - 40) / 2 - 20)), writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' }} title="Range (dB)" />
+              <div style={{ color: '#aaa', fontSize: 12 }}>{`Range: ${Math.round(rangeDb)} dB`}</div>
+              <div style={{ color: '#ccc', fontSize: 12, marginTop: 6 }}>Offset</div>
+              <input type="range" min="-60" max="40" step="1" value={offsetDb} onChange={(e)=>{ setOffsetDb(parseFloat(e.target.value)); setScaleMode('fixed') }} style={{ height: 60, writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' }} title="Offset (dB)" />
+              <div style={{ color: '#aaa', fontSize: 12 }}>{`Offset: ${Math.round(offsetDb)} dB`}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
+                <button className="btn btn-secondary" onClick={()=>setScaleMode('fixed')}>Fixed</button>
+                <button className="btn btn-secondary" onClick={()=>{ setScaleMode('auto_once'); heldScaleRef.current=null; if (autoOnceTimerRef.current) { clearTimeout(autoOnceTimerRef.current); autoOnceTimerRef.current=0 } }}>Auto Once</button>
+                <button className="btn btn-secondary" onClick={()=>{ setScaleMode('auto_smooth'); autoScaleStateRef.current=null }}>Auto (Smooth)</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1009,33 +1090,17 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
               </span>
             </div>
             <div className="flex items-center gap-2" style={{ marginTop: 8, flexWrap: 'wrap' }}>
-              <label className="text-gray-300 text-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <input type="checkbox" checked={autoScale} onChange={(e)=>setAutoScale(e.target.checked)} /> Autoscale
-              </label>
-              {!autoScale && (
-                <>
-                  <label className="text-gray-300 text-sm">Min dB
-                    <input type="number" value={userMinDb} onChange={(e)=>setUserMinDb(parseFloat(e.target.value)||-120)} className="input" style={{ width: 70, marginLeft: 6, padding: '2px 4px' }} />
-                  </label>
-                  <label className="text-gray-300 text-sm">Max dB
-                    <input type="number" value={userMaxDb} onChange={(e)=>setUserMaxDb(parseFloat(e.target.value)||0)} className="input" style={{ width: 70, marginLeft: 6, padding: '2px 4px' }} />
-                  </label>
-                </>
-              )}
-              <label className="text-gray-300 text-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <input type="checkbox" checked={smoothEnabled} onChange={(e)=>setSmoothEnabled(e.target.checked)} /> Smooth
-              </label>
-              {smoothEnabled && (
-                <label className="text-gray-300 text-sm">Alpha
-                  <input type="range" min="0.1" max="0.9" step="0.05" value={smoothAlpha} onChange={(e)=>setSmoothAlpha(parseFloat(e.target.value))} style={{ width: 100, marginLeft: 6 }} />
-                </label>
-              )}
-              <label className="text-gray-300 text-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <input type="checkbox" checked={avgEnabled} onChange={(e)=>{ setAvgEnabled(e.target.checked); if (!e.target.checked) avgBufferRef.current = null }} /> Avg
-              </label>
-              <label className="text-gray-300 text-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <input type="checkbox" checked={peakEnabled} onChange={(e)=>{ setPeakEnabled(e.target.checked); if (!e.target.checked) peakBufferRef.current = null }} /> Peak
-              </label>
+              <label className="text-gray-300 text-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><input type="checkbox" checked={avgEnabled} onChange={(e)=>{ setAvgEnabled(e.target.checked); if (!e.target.checked) avgBufferRef.current = null }} /> Avg</label>
+              <label className="text-gray-300 text-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><input type="checkbox" checked={peakEnabled} onChange={(e)=>{ setPeakEnabled(e.target.checked); if (!e.target.checked) peakBufferRef.current = null }} /> Peak</label>
+              <label className="text-gray-300 text-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><input type="checkbox" checked={smoothEnabled} onChange={(e)=>setSmoothEnabled(e.target.checked)} /> Smooth</label>
+              {smoothEnabled && (<label className="text-gray-300 text-sm">Alpha<input type="range" min="0.1" max="0.9" step="0.05" value={smoothAlpha} onChange={(e)=>setSmoothAlpha(parseFloat(e.target.value))} style={{ width: 100, marginLeft: 6 }} /></label>)}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="text-gray-300 text-sm">Range Presets:</span>
+                {[40,60,80,100].map(r => (
+                  <button key={r} className="btn btn-secondary" onClick={()=>{ setRangeDb(r); setScaleMode('fixed') }}>{r}</button>
+                ))}
+                <button className="btn btn-secondary" onClick={()=>{ setScaleMode('auto_once'); heldScaleRef.current=null; if (autoOnceTimerRef.current) { clearTimeout(autoOnceTimerRef.current); autoOnceTimerRef.current=0 } }}>Reset</button>
+              </div>
             </div>
           </div>
         </div>

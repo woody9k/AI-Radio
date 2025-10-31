@@ -199,7 +199,7 @@ def connect_device(device_index):
             current_device = sdr_manager.get_device(device_index)
 
             # Set default parameters
-            current_device.set_frequency(100e6)  # 100 MHz
+            current_device.set_frequency(104.1e6)  # 104.1 MHz default
             current_device.set_gain("auto")
             current_device.set_sample_rate(2.048e6)
 
