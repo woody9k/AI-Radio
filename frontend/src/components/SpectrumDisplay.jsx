@@ -275,7 +275,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
           if (sig.frequency < visMinF || sig.frequency > visMaxF) return
           let si = startIdx
           for (let i = startIdx + 1; i <= endIdx; i++) { if (frequencies[i] >= sig.frequency) { si = i; break } }
-          const px = ((si - startIdx) / (length - 1)) * width
+        const px = PLOT_LEFT + ((si - startIdx) / (length - 1)) * Math.max(1, width - PLOT_LEFT)
           const normP = ((sig.power ?? minPower) - minPower) / powerRange
           const py = rect.height - (normP * rect.height * 0.9) - rect.height * 0.05
           const dx = dragStart.x - px
@@ -291,7 +291,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
         else if ((e.altKey || e.ctrlKey) && onListenToSignal) onListenToSignal(closest)
         else if (onTuneToFrequency) onTuneToFrequency(closest.frequency, closest.bandwidth)
       } else {
-        const rel = dragStart.x / width
+        const rel = Math.min(1, Math.max(0, (dragStart.x - PLOT_LEFT) / Math.max(1, width - PLOT_LEFT)))
         const idx = startIdx + Math.floor(rel * Math.max(1, endIdx - startIdx))
         const freqIndex = Math.min(frequencies.length - 1, Math.max(0, idx))
         let targetFreq = frequencies[freqIndex]
@@ -304,8 +304,10 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       // Drag - select bandwidth and tune to center
       const sx = Math.min(dragStart.x, x)
       const ex = Math.max(dragStart.x, x)
-      const startIndex = startIdx + Math.floor((sx / width) * Math.max(1, endIdx - startIdx))
-      const endIndex = startIdx + Math.floor((ex / width) * Math.max(1, endIdx - startIdx))
+      const relS = Math.min(1, Math.max(0, (sx - PLOT_LEFT) / Math.max(1, width - PLOT_LEFT)))
+      const relE = Math.min(1, Math.max(0, (ex - PLOT_LEFT) / Math.max(1, width - PLOT_LEFT)))
+      const startIndex = startIdx + Math.floor(relS * Math.max(1, endIdx - startIdx))
+      const endIndex = startIdx + Math.floor(relE * Math.max(1, endIdx - startIdx))
       
       const startFreq = frequencies[startIndex]
       const endFreq = frequencies[endIndex]
@@ -454,6 +456,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
   const spectrumRafRef = useRef(0)
   const fpsRef = useRef({ last: (typeof performance !== 'undefined' ? performance.now() : Date.now()), frames: 0, fps: 0 })
   const initialFittedRef = useRef(false)
+  const PLOT_LEFT = 60 // left axis gutter so data doesn't overlap tick labels
 
   // When streaming starts, perform an Auto Once fit, then hold Fixed
   useEffect(() => {
@@ -498,14 +501,14 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
     for (let i = 0; i <= 10; i++) {
       const y = (height / 10) * i
       ctx.beginPath()
-      ctx.moveTo(0, y)
+      ctx.moveTo(PLOT_LEFT, y)
       ctx.lineTo(width, y)
       ctx.stroke()
     }
 
-    // Vertical grid lines
+    // Vertical grid lines (within plot area)
     for (let i = 0; i <= 10; i++) {
-      const x = (width / 10) * i
+      const x = PLOT_LEFT + ((width - PLOT_LEFT) / 10) * i
       ctx.beginPath()
       ctx.moveTo(x, 0)
       ctx.lineTo(x, height)
@@ -521,6 +524,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       const startIdx = Math.floor(viewRange.start * (spectrum.length - 1))
       const endIdx = Math.floor(viewRange.end * (spectrum.length - 1))
       const length = Math.max(2, endIdx - startIdx + 1)
+      const plotW = Math.max(1, width - PLOT_LEFT)
       
       // Normalize spectrum to canvas height
       let slice = spectrum.slice(startIdx, endIdx + 1)
@@ -627,7 +631,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       ctx.beginPath()
 
       for (let i = 0; i < length; i++) {
-        const x = (i / (length - 1)) * width
+        const x = PLOT_LEFT + (i / (length - 1)) * plotW
         const normalizedPower = (slice[i] - minPower) / powerRange
         const y = height - (normalizedPower * height * 0.9) - height * 0.05
 
@@ -684,7 +688,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
           // Compute x position by nearest index
           let idx = startIdx
           for (let i = startIdx + 1; i <= endIdx; i++) { if (frequencies[i] >= currentFrequency) { idx = i; break } }
-          const x = ((idx - startIdx) / (length - 1)) * width
+          const x = PLOT_LEFT + ((idx - startIdx) / (length - 1)) * plotW
           // Vertical line
           ctx.strokeStyle = colorAccent.trim()
           ctx.setLineDash([4, 4])
@@ -712,8 +716,8 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
             for (let i = startIdx + 1; i <= endIdx; i++) { if (frequencies[i] >= leftTarget) { li = i; break } }
             let ri = endIdx
             for (let i = li; i <= endIdx; i++) { if (frequencies[i] >= rightTarget) { ri = i; break } }
-            const lx = ((li - startIdx) / (length - 1)) * width
-            const rx = ((ri - startIdx) / (length - 1)) * width
+            const lx = PLOT_LEFT + ((li - startIdx) / (length - 1)) * plotW
+            const rx = PLOT_LEFT + ((ri - startIdx) / (length - 1)) * plotW
 
             // Draw left/right lines (edges)
             ctx.strokeStyle = colorAccent.trim()
@@ -737,7 +741,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
           let signalIndex = startIdx
           for (let i = startIdx + 1; i <= endIdx; i++) { if (frequencies[i] >= signal.frequency) { signalIndex = i; break } }
           if (signalIndex !== -1) {
-            const x = ((signalIndex - startIdx) / (length - 1)) * width
+            const x = PLOT_LEFT + ((signalIndex - startIdx) / (length - 1)) * plotW
             const normalizedPower = ((signal.power ?? minPower) - minPower) / powerRange
             const y = height - (normalizedPower * height * 0.9) - height * 0.05
 
@@ -775,7 +779,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
         const numLabels = 5
         const total = Math.max(1, endIdx - startIdx)
         for (let i = 0; i <= numLabels; i++) {
-          const x = (i / numLabels) * width
+          const x = PLOT_LEFT + (i / numLabels) * plotW
           const idx = startIdx + Math.floor((i / numLabels) * total)
           if (idx >= startIdx && idx <= endIdx) {
             const freq = frequencies[idx]
@@ -795,8 +799,8 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
         const y = height - (((tDb - minPower) / (maxPower - minPower)) * height * 0.9) - height * 0.05
         ctx.strokeStyle = colorGrid.trim()
         ctx.lineWidth = 1
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke()
-        const lbl = `${tDb.toFixed(0)} dBFS`
+        ctx.beginPath(); ctx.moveTo(PLOT_LEFT, y); ctx.lineTo(width, y); ctx.stroke()
+        const lbl = `${tDb.toFixed(0)}`
         ctx.fillStyle = colorMuted.trim()
         ctx.fillText(lbl, 10, Math.min(height - 5, Math.max(15, y - 2)))
       }
@@ -809,8 +813,10 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       ctx.lineWidth = 2
       const x = Math.min(dragStart.x, dragEnd.x)
       const w = Math.abs(dragEnd.x - dragStart.x)
-      ctx.fillRect(x, 0, w, height)
-      ctx.strokeRect(x, 0, w, height)
+      const xPlot = Math.max(PLOT_LEFT, x)
+      const wPlot = Math.max(0, Math.min(width - xPlot, (x + w) - xPlot))
+      ctx.fillRect(xPlot, 0, wPlot, height)
+      ctx.strokeRect(xPlot, 0, wPlot, height)
       
       // Show bandwidth label with respect to current zoom slice
       if (useData.absolute_frequencies || useData.frequencies) {
@@ -819,8 +825,8 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
         const visStartIdx = Math.floor(viewRange.start * (frequencies.length - 1))
         const visEndIdx = Math.floor(viewRange.end * (frequencies.length - 1))
         const visLen = Math.max(1, visEndIdx - visStartIdx)
-        const sxRel = Math.min(1, Math.max(0, Math.min(dragStart.x, dragEnd.x) / width))
-        const exRel = Math.min(1, Math.max(0, Math.max(dragStart.x, dragEnd.x) / width))
+        const sxRel = Math.min(1, Math.max(0, (Math.min(dragStart.x, dragEnd.x) - PLOT_LEFT) / Math.max(1, width - PLOT_LEFT)))
+        const exRel = Math.min(1, Math.max(0, (Math.max(dragStart.x, dragEnd.x) - PLOT_LEFT) / Math.max(1, width - PLOT_LEFT)))
         const startIndex = visStartIdx + Math.floor(sxRel * visLen)
         const endIndex = visStartIdx + Math.floor(exRel * visLen)
         const safeStart = Math.min(visEndIdx, Math.max(visStartIdx, startIndex))
@@ -842,7 +848,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       const visStartIdx = Math.floor(viewRange.start * (frequencies.length - 1))
       const visEndIdx = Math.floor(viewRange.end * (frequencies.length - 1))
       const visLen = Math.max(1, visEndIdx - visStartIdx)
-      const rel = Math.min(1, Math.max(0, mousePos.x / width))
+      const rel = Math.min(1, Math.max(0, (mousePos.x - PLOT_LEFT) / Math.max(1, width - PLOT_LEFT)))
       const freqIndex = visStartIdx + Math.floor(rel * visLen)
       
       if (freqIndex >= visStartIdx && freqIndex <= visEndIdx) {
