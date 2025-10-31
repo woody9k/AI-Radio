@@ -5,7 +5,10 @@ A modern web-based interface for RTL-SDR devices with AI-powered anomaly detecti
 ## Features
 
 - **Real-time Spectrum Visualization**: Waterfall displays and frequency plots
-- **Interactive Spectrum Tuning**: Click in the spectrum to tune; drag to select bandwidth (center + BW)
+- **Interactive Spectrum Tuning**: Click to tune; drag to select bandwidth (center + BW); double‑click to center; snap‑to‑step
+- **SDR#‑style Zoom & Range**: Vertical Zoom and dBFS Range sliders with ticked dBFS axis (top fixed at −30 dBFS; adjustable bottom −40…−180)
+- **Absolute Frequency Axis**: Frequency graduations reflect the current zoomed slice and tuned center
+- **High‑Res Zoom**: Automatic zoom FFT for spans < 100 kHz for finer resolution
 - **Tuned Frequency Marker**: Always-visible marker and label at the tuned frequency
 - **AI Signal Classification**: Automatically identify signal types (AM, FM, digital, etc.)
 - **Anomaly Detection**: Detect unusual signals and interference patterns
@@ -13,6 +16,10 @@ A modern web-based interface for RTL-SDR devices with AI-powered anomaly detecti
 - **User-Friendly Interface**: Simple presets for beginners, advanced controls for hobbyists
 - **SDR#-Style Controls**: Left panel split into Radio and Device sections (Mode, Bandwidth, AGC, Squelch, Bias‑T when available)
 - **Signal Recording**: Capture and replay interesting signals
+ - **Passband Overlay**: Visual passband with draggable edges to adjust bandwidth
+ - **Average/Peak Traces**: Optional moving average and peak‑hold overlays
+ - **Waterfall Controls**: Auto‑gain and frame rate controls
+ - **Debug Overlay**: Shows SR, FFT size, Hz/bin, and FPS
 
 ## Quick Start
 
@@ -156,6 +163,15 @@ This checks conformance (lint/format), applies fixes, optionally tests device/AI
   - Squelch toggle and threshold slider
   - AGC toggle
 - Device Section:
+
+### Spectrum & Waterfall
+- Zoom: mouse wheel (Shift = faster), Alt+wheel for fine pan
+- Zoom/Range sliders (right): vertical Zoom; dBFS Range (top fixed at −30 dBFS)
+- Axis: bottom frequency labels reflect the current zoom slice; left dBFS axis shows ticks and labels
+- Passband: draggable edges adjust bandwidth; click or drag‑select tunes center/BW
+- High‑Res Zoom: for spans < ~100 kHz the app fetches a high‑resolution FFT slice
+- Waterfall: auto‑gain toggle and rate control (drop frames client‑side)
+- Debug: SR/FFT/Hz‑per‑bin/FPS shown in the spectrum corner
   - Gain selector (Auto or fixed values)
   - Sample rate selector (250 kS/s–3.072 MS/s)
   - Bias‑T toggle (if supported, e.g., RTL‑SDR Blog V4)

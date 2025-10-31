@@ -11,6 +11,9 @@ OpenAPI spec: see `docs/openapi.yaml`.
 - GET/POST `/api/settings` → SDR device settings (frequency, sample_rate, gain, bandwidth)
 - POST `/api/stream/start` / `/api/stream/stop` → control spectrum streaming
 - GET `/api/spectrum` → one-shot FFT + detected signals with classifications
+  - Response includes: `frequencies` (relative), `absolute_frequencies`, `center_frequency`, `sample_rate`, `resolution_hz`, `spectrum`, `signals`, `timestamp`
+- GET `/api/spectrum/zoom?center={Hz}&span={Hz}&fft={N}` → high‑resolution zoom slice via decimation
+  - Returns `frequencies` (relative), `absolute_frequencies`, `center_frequency`, `sample_rate` (post‑decimation), `resolution_hz`, `spectrum`, `timestamp`
 - GET `/api/presets` → list presets; POST `/api/presets` → create; POST `/api/presets/{name}/apply`
 - DELETE `/api/presets/{name}` → delete custom preset
 - GET `/api/data/statistics` → data collection stats
@@ -23,7 +26,7 @@ OpenAPI spec: see `docs/openapi.yaml`.
 - POST `/api/ai/command` → `{ text, dry_run? }` → `{ success, intent, executed?, result? }`
 
 ## WebSocket Events
-- `spectrum_data` → `{ frequencies, spectrum, signals, features, timestamp }`
+- `spectrum_data` → `{ frequencies, absolute_frequencies, center_frequency, sample_rate, resolution_hz, spectrum, signals, features, timestamp }`
 - `waterfall_data` → `{ data, timestamp }`
 - `status` → `{ message }`
 - `device_error` → `{ error, timestamp }`

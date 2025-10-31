@@ -451,6 +451,10 @@ def get_spectrum():
 
         # Process spectrum
         freqs, spectrum = signal_processor.compute_fft(samples)
+        center_freq = float(current_device.frequency)
+        sample_rate = float(current_device.sample_rate)
+        resolution_hz = float(signal_processor.get_frequency_resolution())
+        abs_freqs = (freqs + center_freq).tolist()
 
         # Detect signals
         signals = signal_processor.detect_signals(spectrum, current_device.frequency)
@@ -484,6 +488,10 @@ def get_spectrum():
             {
                 "success": True,
                 "frequencies": freqs.tolist(),
+                "absolute_frequencies": abs_freqs,
+                "center_frequency": center_freq,
+                "sample_rate": sample_rate,
+                "resolution_hz": resolution_hz,
                 "spectrum": spectrum.tolist(),
                 "signals": signals,
                 "timestamp": datetime.now().isoformat(),
@@ -491,6 +499,88 @@ def get_spectrum():
         )
     except Exception as e:
         logger.error(f"Error getting spectrum: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/spectrum/zoom", methods=["GET"])
+def get_spectrum_zoom():
+    """Return a high-resolution spectrum slice around the current center using decimation.
+
+    Query params:
+      - center: center frequency in Hz (optional; defaults to device center)
+      - span: desired span in Hz (optional; defaults to 100e3)
+      - fft: fft size hint (optional; defaults to 8192)
+    Notes:
+      - For simplicity, the decimation assumes the requested center matches the device center.
+        If they differ by more than 10% of the current span, we clamp to device center.
+    """
+    global current_device
+    if not current_device or not current_device.is_connected:
+        return jsonify({"success": False, "error": "No device connected"}), 400
+
+    try:
+        device_center = float(current_device.frequency)
+        sample_rate = float(current_device.sample_rate)
+        center = float(request.args.get("center", device_center))
+        span = float(request.args.get("span", 100e3))
+        fft_hint = int(request.args.get("fft", 8192))
+
+        # Clamp unreasonable inputs
+        span = max(5e3, min(sample_rate, span))
+        fft_size = max(2048, min(16384, fft_hint))
+
+        # Keep center aligned with device center for v1
+        if abs(center - device_center) > (0.1 * sample_rate):
+            center = device_center
+
+        # Determine decimation so that post-decimation span ~= requested span
+        # Post-decimation Nyquist is sr_decim/2, so displayed span ~= sr_decim
+        # We want sr_decim ~= span -> decim = sample_rate / span
+        decimation = int(np.ceil(sample_rate / span))
+        decimation = max(1, min(32, decimation))
+        sr_decim = sample_rate / decimation
+
+        # Read enough samples for desired FFT size at decimated rate
+        # Heuristic: read 2x FFT worth of samples then take the last FFT window
+        read_count = fft_size * decimation * 2
+        samples = current_device.read_samples(read_count)
+        if samples is None or len(samples) == 0:
+            return jsonify({"success": False, "error": "Failed to read samples"}), 500
+
+        # Digital down-conversion would allow arbitrary centers; for now assume centered
+        # Apply simple low-pass decimation using signal_processor helper
+        try:
+            decimated = signal_processor.decimate(samples, decimation)
+        except Exception:
+            # Fallback: naive downsample
+            decimated = samples[::decimation]
+
+        # Use a larger FFT for higher resolution
+        original_fft = signal_processor.fft_size
+        original_sr = signal_processor.sample_rate
+        try:
+            signal_processor.set_sample_rate(sr_decim)
+            signal_processor.set_fft_size(fft_size)
+            freqs_rel, spectrum = signal_processor.compute_fft(decimated[-fft_size:])
+        finally:
+            signal_processor.set_sample_rate(original_sr)
+            signal_processor.set_fft_size(original_fft)
+
+        freqs_abs = (freqs_rel + center).tolist()
+        resolution_hz = sr_decim / fft_size
+
+        return jsonify({
+            "success": True,
+            "center_frequency": center,
+            "sample_rate": sr_decim,
+            "resolution_hz": resolution_hz,
+            "frequencies": freqs_rel.tolist(),
+            "absolute_frequencies": freqs_abs,
+            "spectrum": spectrum.tolist(),
+            "timestamp": datetime.now().isoformat(),
+        })
+    except Exception as e:
+        logger.error(f"Error getting zoom spectrum: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
@@ -957,10 +1047,19 @@ def _process_stream_iteration() -> bool:
         except Exception as e:
             logger.error(f"Error collecting data: {e}")
 
+    center_freq = float(current_device.frequency)
+    sample_rate = float(current_device.sample_rate)
+    resolution_hz = float(signal_processor.get_frequency_resolution())
+    abs_freqs = (freqs + center_freq).tolist()
+
     socketio.emit(
         "spectrum_data",
         {
             "frequencies": freqs.tolist(),
+            "absolute_frequencies": abs_freqs,
+            "center_frequency": center_freq,
+            "sample_rate": sample_rate,
+            "resolution_hz": resolution_hz,
             "spectrum": spectrum.tolist(),
             "signals": signals,
             "features": features,

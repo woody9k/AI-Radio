@@ -20,7 +20,11 @@ User → Frontend (React) → REST/WS → Backend (Flask/Socket.IO) → SDR → 
 - `backend/ai/*`: OpenAI parsing, intent routing
 - `backend/radio/*`: band scanners (FM/NOAA)
 - `frontend/src/App.css`: CSS Grid layout, sticky header/nav, responsive breakpoints
-- `frontend/src/components/SpectrumDisplay.jsx`: Spectrum/waterfall with frequency controls in header
+- `frontend/src/components/SpectrumDisplay.jsx`: Spectrum/waterfall with absolute frequency axis, SDR#‑style zoom/range sliders, passband overlay, average/peak traces, and high‑res zoom integration
+## Spectrum Pipeline Details
+- Backend computes FFT (`signal_processor.compute_fft`) and now includes absolute frequencies, `center_frequency`, `sample_rate`, and `resolution_hz` in both REST and WebSocket payloads.
+- High‑res zoom endpoint `/api/spectrum/zoom` performs decimation and a larger FFT (e.g., 8192) around the current center for spans < ~100 kHz.
+- Frontend switches to zoom data automatically when the visible span is below the threshold; otherwise it uses the live stream data.
 - `frontend/src/components/Controls.jsx`: Mode/Bandwidth linkage with presets and validation
 
 ## AI Command Path
