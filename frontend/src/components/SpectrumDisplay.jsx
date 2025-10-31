@@ -26,7 +26,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
   const peakBufferRef = useRef(null)
   // SDR#-style scale controls
   const [rangeDb, setRangeDb] = useState(80) // visible span
-  const [offsetDb, setOffsetDb] = useState(16) // default ~90% towards new top cap: top = -30 + 16 = -14 dBFS
+  const [offsetDb, setOffsetDb] = useState(70) // default top ~ +40 dBFS: top = -30 + 70 = +40 dBFS
   const [scaleMode, setScaleMode] = useState('fixed') // 'fixed' | 'auto_once' | 'auto_smooth'
   const autoScaleStateRef = useRef(null) // { min, max }
   const heldScaleRef = useRef(null) // { min, max } for auto_once hold
@@ -540,8 +540,18 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       // Scale modes: fixed (Range+Offset), auto_once (capture and hold), auto_smooth (EMA/hysteresis)
       if (scaleMode === 'fixed') {
         const desiredTop = -30 + offsetDb
-        const top = Math.min(-10, desiredTop)
-        const bottom = top - rangeDb
+        let top = Math.min(40, desiredTop)
+        let bottom = top - rangeDb
+        // enforce absolute bottom of -180 dBFS; keep range if possible
+        if (bottom < -180) {
+          bottom = -180
+          top = bottom + rangeDb
+        }
+        // re-apply top cap if needed
+        if (top > 40) {
+          top = 40
+          bottom = top - rangeDb
+        }
         maxPower = top
         minPower = bottom
       } else if (scaleMode === 'auto_once') {
@@ -561,15 +571,21 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
             const p90 = pct(90)
             const marginTop = 5, marginBottom = 5
             const topCandidate = p90 + marginTop
-            const top = Math.min(-10, topCandidate)
+            let top = Math.min(40, topCandidate)
             let range = Math.max(20, Math.min(140, 80))
             let bottom = top - range
             if (bottom > p10 - marginBottom) {
               range = Math.min(140, top - (p10 - marginBottom))
               bottom = top - range
             }
+            // clamp absolute bottom and re-derive top
+            if (bottom < -180) {
+              bottom = -180
+              top = bottom + range
+            }
+            if (top > 40) top = 40
             setRangeDb(range)
-            setOffsetDb(Math.min(20, top - (-30)))
+            setOffsetDb(Math.max(-120, Math.min(70, top - (-30))))
             setScaleMode('fixed')
             heldScaleRef.current = null
             autoOnceTimerRef.current = 0
@@ -577,25 +593,30 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
           }, 1000)
         }
         // Live preview while capturing
-        const previewTop = Math.min(-10, rawMax + 5)
+        const previewTop = Math.min(40, rawMax + 5)
         const previewBottom = rawMin - 5
-        maxPower = previewTop
-        minPower = previewBottom
+        // keep preview within absolute bounds
+        maxPower = Math.min(40, previewTop)
+        minPower = Math.max(-180, previewBottom)
       } else if (scaleMode === 'auto_smooth') {
         const alpha = 0.2
         if (!autoScaleStateRef.current) autoScaleStateRef.current = { min: rawMin, max: rawMax }
         autoScaleStateRef.current.min = alpha * rawMin + (1 - alpha) * autoScaleStateRef.current.min
         autoScaleStateRef.current.max = alpha * rawMax + (1 - alpha) * autoScaleStateRef.current.max
         // Compute target top/bottom with margins, then slew range/offset for stability
-        const targetTop = Math.min(-10, autoScaleStateRef.current.max + 5)
+        const targetTop = Math.min(40, autoScaleStateRef.current.max + 5)
         const targetBottom = autoScaleStateRef.current.min - 5
         const targetRange = Math.max(20, Math.min(140, targetTop - targetBottom))
-        const targetOffset = Math.min(20, targetTop - (-30))
+        const targetOffset = Math.max(-120, Math.min(70, targetTop - (-30)))
         const beta = 0.1
         setRangeDb(prev => prev + beta * (targetRange - prev))
         setOffsetDb(prev => prev + beta * (targetOffset - prev))
-        const top = Math.min(-10, -30 + (offsetDb + beta * (targetOffset - offsetDb)))
-        const bottom = top - (rangeDb + beta * (targetRange - rangeDb))
+        let top = Math.min(40, -30 + (offsetDb + beta * (targetOffset - offsetDb)))
+        let bottom = top - (rangeDb + beta * (targetRange - rangeDb))
+        if (bottom < -180) {
+          bottom = -180
+          top = bottom + (rangeDb + beta * (targetRange - rangeDb))
+        }
         maxPower = top
         minPower = bottom
       }
@@ -617,19 +638,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
         }
       }
       ctx.stroke()
-      // Visibility guard: gently nudge offset if many samples clipped above/below in Fixed mode
-      if (scaleMode === 'fixed') {
-        let above = 0, below = 0
-        for (let i = 0; i < slice.length; i++) {
-          const v = slice[i]
-          if (v > maxPower) above++
-          if (v < minPower) below++
-        }
-        const fracAbove = above / slice.length
-        const fracBelow = below / slice.length
-        if (fracAbove > 0.3) setOffsetDb(o => Math.max(-60, o - 2))
-        if (fracBelow > 0.3) setOffsetDb(o => Math.min(20, o + 2))
-      }
+      // Removed visibility nudge per request
 
       // Average trace
       if (avgEnabled) {
@@ -1043,7 +1052,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
               <input type="range" min="20" max="140" step="1" value={rangeDb} onChange={(e)=>{ setRangeDb(parseFloat(e.target.value)); setScaleMode('fixed') }} style={{ height: Math.max(80, Math.floor((dimensions.height - 40) / 2 - 20)), writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' }} title="Range (dB)" />
               <div style={{ color: '#aaa', fontSize: 12 }}>{`Range: ${Math.round(rangeDb)} dB`}</div>
               <div style={{ color: '#ccc', fontSize: 12, marginTop: 6 }}>Offset</div>
-              <input type="range" min="-60" max="20" step="1" value={offsetDb} onChange={(e)=>{ setOffsetDb(parseFloat(e.target.value)); setScaleMode('fixed') }} style={{ height: 60, writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' }} title="Offset (dB)" />
+              <input type="range" min="-120" max="70" step="1" value={offsetDb} onChange={(e)=>{ setOffsetDb(parseFloat(e.target.value)); setScaleMode('fixed') }} style={{ height: 60, writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' }} title="Offset (dB)" />
               <div style={{ color: '#aaa', fontSize: 12 }}>{`Offset: ${Math.round(offsetDb)} dB`}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
                 <button className="btn btn-secondary" onClick={()=>setScaleMode('fixed')}>Fixed</button>
