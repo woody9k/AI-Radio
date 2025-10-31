@@ -26,7 +26,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
   const peakBufferRef = useRef(null)
   // SDR#-style scale controls
   const [rangeDb, setRangeDb] = useState(80) // visible span
-  const [offsetDb, setOffsetDb] = useState(36) // default ~90% towards top: top = -30 + 36 = +6 dBFS
+  const [offsetDb, setOffsetDb] = useState(16) // default ~90% towards new top cap: top = -30 + 16 = -14 dBFS
   const [scaleMode, setScaleMode] = useState('fixed') // 'fixed' | 'auto_once' | 'auto_smooth'
   const autoScaleStateRef = useRef(null) // { min, max }
   const heldScaleRef = useRef(null) // { min, max } for auto_once hold
@@ -115,7 +115,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
   useEffect(() => {
     try {
       const key = 'spectrumScale.v1'
-      const payload = { rangeDb, offsetDb: Math.min(40, offsetDb), scaleMode }
+      const payload = { rangeDb, offsetDb: Math.min(20, offsetDb), scaleMode }
       localStorage.setItem(key, JSON.stringify(payload))
     } catch (_) {}
   }, [rangeDb, offsetDb, scaleMode])
@@ -527,7 +527,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       // Scale modes: fixed (Range+Offset), auto_once (capture and hold), auto_smooth (EMA/hysteresis)
       if (scaleMode === 'fixed') {
         const desiredTop = -30 + offsetDb
-        const top = Math.min(10, desiredTop)
+        const top = Math.min(-10, desiredTop)
         const bottom = top - rangeDb
         maxPower = top
         minPower = bottom
@@ -549,7 +549,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
           }, 1000)
         }
         // While capturing, show a smoothed preview
-        const topPreview = Math.min(10, (heldScaleRef.current.max + 5))
+        const topPreview = Math.min(-10, (heldScaleRef.current.max + 5))
         const bottomPreview = (heldScaleRef.current.min - 5)
         maxPower = topPreview
         minPower = bottomPreview
@@ -559,14 +559,14 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
         autoScaleStateRef.current.min = alpha * rawMin + (1 - alpha) * autoScaleStateRef.current.min
         autoScaleStateRef.current.max = alpha * rawMax + (1 - alpha) * autoScaleStateRef.current.max
         // Compute target top/bottom with margins, then slew range/offset for stability
-        const targetTop = Math.min(10, autoScaleStateRef.current.max + 5)
+        const targetTop = Math.min(-10, autoScaleStateRef.current.max + 5)
         const targetBottom = autoScaleStateRef.current.min - 5
         const targetRange = Math.max(20, Math.min(140, targetTop - targetBottom))
-        const targetOffset = Math.min(40, targetTop - (-30))
+        const targetOffset = Math.min(20, targetTop - (-30))
         const beta = 0.1
         setRangeDb(prev => prev + beta * (targetRange - prev))
         setOffsetDb(prev => prev + beta * (targetOffset - prev))
-        const top = Math.min(10, -30 + (offsetDb + beta * (targetOffset - offsetDb)))
+        const top = Math.min(-10, -30 + (offsetDb + beta * (targetOffset - offsetDb)))
         const bottom = top - (rangeDb + beta * (targetRange - rangeDb))
         maxPower = top
         minPower = bottom
@@ -1002,7 +1002,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
               <input type="range" min="20" max="140" step="1" value={rangeDb} onChange={(e)=>{ setRangeDb(parseFloat(e.target.value)); setScaleMode('fixed') }} style={{ height: Math.max(80, Math.floor((dimensions.height - 40) / 2 - 20)), writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' }} title="Range (dB)" />
               <div style={{ color: '#aaa', fontSize: 12 }}>{`Range: ${Math.round(rangeDb)} dB`}</div>
               <div style={{ color: '#ccc', fontSize: 12, marginTop: 6 }}>Offset</div>
-              <input type="range" min="-60" max="40" step="1" value={offsetDb} onChange={(e)=>{ setOffsetDb(parseFloat(e.target.value)); setScaleMode('fixed') }} style={{ height: 60, writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' }} title="Offset (dB)" />
+              <input type="range" min="-60" max="20" step="1" value={offsetDb} onChange={(e)=>{ setOffsetDb(parseFloat(e.target.value)); setScaleMode('fixed') }} style={{ height: 60, writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' }} title="Offset (dB)" />
               <div style={{ color: '#aaa', fontSize: 12 }}>{`Offset: ${Math.round(offsetDb)} dB`}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
                 <button className="btn btn-secondary" onClick={()=>setScaleMode('fixed')}>Fixed</button>
