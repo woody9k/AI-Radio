@@ -143,10 +143,16 @@ scripts/session_init.sh --fix
 This checks conformance (lint/format), applies fixes, optionally tests device/AI, and starts services.
 
 ### Updated Controls (SDR#‑style)
-- Radio Section:
-  - Frequency input with ±10 kHz step buttons and slider (25 MHz–1.75 GHz)
+- **Frequency Controls** (in Spectrum header):
+  - Per-digit stepper (GHz/MHz/kHz/Hz with ▲/▼ buttons)
+  - Numeric input (Enter or blur to tune)
+- Radio Section (left panel):
+  - Frequency display (read-only; actual tuning via Spectrum header)
   - Mode selector: WFM, NFM, AM, SSB
-  - Filter/Bandwidth input (optional)
+  - Filter/Bandwidth dropdown with:
+    - **Auto** option (sets mode-specific defaults: WFM 200kHz, NFM 12.5kHz, AM 9kHz, SSB 2.4kHz)
+    - **Preset** values per mode (WFM: 150-250kHz, NFM: 8-15kHz, AM: 6-12kHz, SSB: 2-3kHz)
+    - **Custom** option with per-mode persistence and validation
   - Squelch toggle and threshold slider
   - AGC toggle
 - Device Section:
@@ -158,8 +164,11 @@ This checks conformance (lint/format), applies fixes, optionally tests device/AI
 - Choose a theme in Settings → Theme (Minimal, Slate, Graphite, Forest). Your choice persists and applies to the spectrum, labels, and UI panels.
 
 ### Layout & Navigation
-- The top header is sticky to keep navigation available while switching panes.
-- The left panel avoids inner scrolling; the page scrolls instead.
+- **CSS Grid Layout**: 3-column responsive grid (left: 260px, main: flexible, right: 280px)
+- **Sticky Header/Nav**: Header (64px) and navigation bar (44px) remain visible while scrolling
+- **Responsive**: Grid collapses to single column at ≤768px width
+- **Page-level Scrolling**: Panels use page scroll instead of inner scrollbars
+- **Frequency Controls**: Moved to Spectrum header for better accessibility and consistency
 
 ### AI Settings
 - Set your OpenAI API key in Settings → AI Settings, or export `OPENAI_API_KEY`.
