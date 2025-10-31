@@ -870,7 +870,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
     ctx.fillStyle = colorText.trim()
     ctx.font = '14px Arial'
     const scaleLabel = (scaleMode === 'fixed') ? `Power (dBFS) • Range ${Math.round(rangeDb)} dB • Offset ${Math.round(offsetDb)} dB` : (scaleMode === 'auto_once' ? 'Power (dBFS) • Auto Once' : 'Power (dBFS) • Auto (Smooth)')
-    ctx.fillText(scaleLabel, 10, 20)
+    ctx.fillText(scaleLabel, PLOT_LEFT, 12)
     
     // Draw instructions
     ctx.fillStyle = colorMuted.trim()
