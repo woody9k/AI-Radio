@@ -354,6 +354,7 @@ function App() {
             onTuneToFrequency={tuneToFrequency}
             currentFrequency={deviceInfo?.frequency}
             currentBandwidth={deviceInfo?.bandwidth}
+            currentMode={deviceInfo?.mode || 'WFM'}
             onListenToSignal={listenToSignal}
             onBookmarkSignal={bookmarkSignal}
           />

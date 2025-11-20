@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react'
 
-const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequency, currentFrequency, currentBandwidth, onListenToSignal, onBookmarkSignal }) => {
+const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequency, currentFrequency, currentBandwidth, onListenToSignal, onBookmarkSignal, currentMode = 'WFM' }) => {
   const canvasRef = useRef(null)
   const waterfallRef = useRef(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 400 })
@@ -9,7 +9,15 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
   const [dragStart, setDragStart] = useState(null)
   const [dragEnd, setDragEnd] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
-  const [viewRange, setViewRange] = useState({ start: 0, end: 1 }) // fraction [0..1]
+  
+  // SDRSharp-style default: ~300 kHz span (15% of 2.048 MHz) centered
+  const getDefaultViewRange = () => {
+    // Default to showing ~300 kHz span centered
+    // For 2.048 MHz sample rate: 300 kHz / 2.048 MHz = ~0.1465
+    // Center at 0.5, so start = 0.5 - 0.1465/2 = 0.42675, end = 0.5 + 0.1465/2 = 0.57325
+    return { start: 0.425, end: 0.575 }
+  }
+  const [viewRange, setViewRange] = useState(getDefaultViewRange()) // fraction [0..1]
   const [panning, setPanning] = useState(false)
   // Zoom and dBFS range controls
   const [zoomLevel, setZoomLevel] = useState(0) // 0..1 (0 = full span)
@@ -42,6 +50,22 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
   const [touchStart, setTouchStart] = useState(null)
   const [touchDistance, setTouchDistance] = useState(0)
   const [lastTouchDistance, setLastTouchDistance] = useState(0)
+  
+  // Signal persistence system
+  const [persistentSignals, setPersistentSignals] = useState(new Map()) // Map<frequency, {signal, lastSeen, firstSeen, maxPower}>
+  const signalPositionsRef = useRef(new Map()) // Cache signal positions
+  const lastViewRangeRef = useRef({ start: 0, end: 1 })
+  
+  // Helper function to get default bandwidth for mode
+  const getDefaultBandwidthForMode = (mode) => {
+    const modes = {
+      'WFM': 200e3,
+      'NFM': 12.5e3,
+      'AM': 9e3,
+      'SSB': 2.4e3
+    }
+    return modes[mode] || 12.5e3 // default to NFM
+  }
 
   useEffect(() => {
     const updateDimensions = () => {
@@ -64,6 +88,61 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       setInputFrequency(currentFrequency)
     }
   }, [currentFrequency])
+
+  // Update persistent signals when new spectrum data arrives
+  useEffect(() => {
+    if (!spectrumData?.signals) return
+    
+    const now = Date.now()
+    const fadeTime = 10000 // 10 seconds fade time
+    const maxSignals = 30 // Top 30 signals
+    
+    setPersistentSignals(prev => {
+      const updated = new Map(prev)
+      
+      // Update or add current signals
+      spectrumData.signals.forEach(signal => {
+        const freq = signal.frequency
+        const existing = updated.get(freq)
+        const power = signal.power ?? -100
+        
+        if (existing) {
+          // Update existing signal
+          updated.set(freq, {
+            ...signal,
+            lastSeen: now,
+            firstSeen: existing.firstSeen || now,
+            maxPower: Math.max(existing.maxPower || power, power)
+          })
+        } else {
+          // Add new signal
+          updated.set(freq, {
+            ...signal,
+            lastSeen: now,
+            firstSeen: now,
+            maxPower: power
+          })
+        }
+      })
+      
+      // Remove signals that are too old
+      for (const [freq, data] of updated.entries()) {
+        if (now - data.lastSeen > fadeTime) {
+          updated.delete(freq)
+        }
+      }
+      
+      // Limit to top N by power
+      if (updated.size > maxSignals) {
+        const sorted = Array.from(updated.entries())
+          .sort((a, b) => (b[1].maxPower || -200) - (a[1].maxPower || -200))
+          .slice(0, maxSignals)
+        return new Map(sorted)
+      }
+      
+      return updated
+    })
+  }, [spectrumData?.signals])
 
   const clampFrequency = (value) => {
     // Clamp to a broad RF range, not the current FFT span
@@ -206,19 +285,20 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       }
     }
 
-    // Detect double-click to center on cursor
-    if (e.detail === 2 && spectrumData && (spectrumData.absolute_frequencies || spectrumData.frequencies)) {
-      const freqs = spectrumData.absolute_frequencies || spectrumData.frequencies
-      const startIdx = Math.floor(viewRange.start * (freqs.length - 1))
-      const endIdx = Math.floor(viewRange.end * (freqs.length - 1))
-      const rel = Math.min(1, Math.max(0, x / rect.width))
-      const idx = startIdx + Math.floor(rel * Math.max(1, endIdx - startIdx))
-      const target = freqs[Math.max(startIdx, Math.min(endIdx, idx))]
-      if (onTuneToFrequency && typeof target === 'number') {
-        onTuneToFrequency(target)
+      // Detect double-click to center on cursor with auto bandwidth
+      if (e.detail === 2 && spectrumData && (spectrumData.absolute_frequencies || spectrumData.frequencies)) {
+        const freqs = spectrumData.absolute_frequencies || spectrumData.frequencies
+        const startIdx = Math.floor(viewRange.start * (freqs.length - 1))
+        const endIdx = Math.floor(viewRange.end * (freqs.length - 1))
+        const rel = Math.min(1, Math.max(0, (x - PLOT_LEFT) / Math.max(1, rect.width - PLOT_LEFT)))
+        const idx = startIdx + Math.floor(rel * Math.max(1, endIdx - startIdx))
+        const target = freqs[Math.max(startIdx, Math.min(endIdx, idx))]
+        if (onTuneToFrequency && typeof target === 'number') {
+          const autoBandwidth = getDefaultBandwidthForMode(currentMode)
+          onTuneToFrequency(target, autoBandwidth)
+        }
+        return
       }
-      return
-    }
 
     if (e.button === 2 || e.shiftKey) {
       setPanning(true)
@@ -274,26 +354,29 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       const minPower = Math.min(...spectrum.slice(startIdx, endIdx + 1))
       const maxPower = Math.max(...spectrum.slice(startIdx, endIdx + 1))
       const powerRange = (maxPower - minPower) || 1
-      if (spectrumData.signals) {
-        spectrumData.signals.forEach((sig) => {
-          if (sig.frequency < visMinF || sig.frequency > visMaxF) return
-          let si = startIdx
-          for (let i = startIdx + 1; i <= endIdx; i++) { if (frequencies[i] >= sig.frequency) { si = i; break } }
+      // Check persistent signals for click targets
+      const persistentSignalsArray = Array.from(persistentSignals.values())
+      persistentSignalsArray.forEach((sig) => {
+        if (sig.frequency < visMinF || sig.frequency > visMaxF) return
+        let si = startIdx
+        for (let i = startIdx + 1; i <= endIdx; i++) { if (frequencies[i] >= sig.frequency) { si = i; break } }
         const px = PLOT_LEFT + ((si - startIdx) / (length - 1)) * Math.max(1, width - PLOT_LEFT)
-          const normP = ((sig.power ?? minPower) - minPower) / powerRange
-          const py = rect.height - (normP * rect.height * 0.9) - rect.height * 0.05
-          const dx = dragStart.x - px
-          const dy = dragStart.y - py
-          const d2 = dx*dx + dy*dy
-          if (d2 < minDist) { minDist = d2; closest = sig }
-        })
-      }
+        const normP = ((sig.power ?? sig.maxPower ?? minPower) - minPower) / powerRange
+        const py = rect.height - (normP * rect.height * 0.85) - rect.height * 0.10
+        const dx = dragStart.x - px
+        const dy = dragStart.y - py
+        const d2 = dx*dx + dy*dy
+        if (d2 < minDist) { minDist = d2; closest = sig }
+      })
       const hitRadius2 = 10 * 10
       if (closest && minDist <= hitRadius2) {
         // Shift-click to bookmark; Alt or Ctrl to listen; default to tune
         if (e.shiftKey && onBookmarkSignal) onBookmarkSignal(closest)
         else if ((e.altKey || e.ctrlKey) && onListenToSignal) onListenToSignal(closest)
-        else if (onTuneToFrequency) onTuneToFrequency(closest.frequency, closest.bandwidth)
+        else if (onTuneToFrequency) {
+          const autoBandwidth = closest.bandwidth || getDefaultBandwidthForMode(currentMode)
+          onTuneToFrequency(closest.frequency, autoBandwidth)
+        }
       } else {
         const rel = Math.min(1, Math.max(0, (dragStart.x - PLOT_LEFT) / Math.max(1, width - PLOT_LEFT)))
         const idx = startIdx + Math.floor(rel * Math.max(1, endIdx - startIdx))
@@ -302,7 +385,10 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
         // Snap-to-step (1 kHz grid for now)
         const step = 1000
         targetFreq = Math.round(targetFreq / step) * step
-        if (onTuneToFrequency) onTuneToFrequency(targetFreq)
+        
+        // Click-to-center with auto bandwidth based on mode
+        const autoBandwidth = getDefaultBandwidthForMode(currentMode)
+        if (onTuneToFrequency) onTuneToFrequency(targetFreq, autoBandwidth)
       }
     } else {
       // Drag - select bandwidth and tune to center
@@ -520,42 +606,56 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
     if (Math.abs(clamped - zoomLevel) > 0.002) setZoomLevel(clamped)
   }, [viewRange])
 
-  // Right/Shift drag pan
+  // Right/Shift drag pan - improved smoothness
   useEffect(() => {
     if (!panning || !dragStart || !canvasRef.current) return
+    
+    let rafId = null
     const onMove = (e) => {
-      const rect = canvasRef.current.getBoundingClientRect()
-      const dx = (e.clientX - rect.left - dragStart.x) / rect.width
-      const range = viewRange.end - viewRange.start
-      let start = viewRange.start - dx
-      let end = start + range
-      if (start < 0) { end -= start; start = 0 }
-      if (end > 1) { const over = end - 1; start -= over; end = 1; if (start < 0) start = 0 }
-      setViewRange({ start, end })
-      setDragEnd({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+      if (rafId) cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(() => {
+        const rect = canvasRef.current.getBoundingClientRect()
+        const dx = (e.clientX - rect.left - dragStart.x) / rect.width
+        const range = viewRange.end - viewRange.start
+        let start = viewRange.start - dx
+        let end = start + range
+        if (start < 0) { end -= start; start = 0 }
+        if (end > 1) { const over = end - 1; start -= over; end = 1; if (start < 0) start = 0 }
+        setViewRange({ start, end })
+        setDragEnd({ x: e.clientX - rect.left, y: e.clientY - rect.top })
 
-      // Edge retune: if near edges, retune to center of current view
-      const now = Date.now()
-      const shouldRetune = (start < 0.03 || end > 0.97) && (now - lastRetuneRef.current > 700)
-      if (shouldRetune && spectrumData && spectrumData.frequencies && onTuneToFrequency) {
-        const freqs = spectrumData.frequencies
-        const startIdx = Math.floor(Math.max(0, Math.min(1, start)) * (freqs.length - 1))
-        const endIdx = Math.floor(Math.max(0, Math.min(1, end)) * (freqs.length - 1))
-        const centerIdx = Math.floor((startIdx + endIdx) / 2)
-        const target = freqs[Math.max(0, Math.min(freqs.length - 1, centerIdx))]
-        lastRetuneRef.current = now
-        onTuneToFrequency(target)
-        // Recenter view around 0.5 to keep span after retune
-        const newStart = Math.max(0, 0.5 - range / 2)
-        const newEnd = Math.min(1, 0.5 + range / 2)
-        setViewRange({ start: newStart, end: newEnd })
-      }
+        // Edge retune: if near edges, retune to center of current view
+        const now = Date.now()
+        const shouldRetune = (start < 0.03 || end > 0.97) && (now - lastRetuneRef.current > 700)
+        if (shouldRetune && spectrumData && spectrumData.frequencies && onTuneToFrequency) {
+          const freqs = spectrumData.frequencies
+          const startIdx = Math.floor(Math.max(0, Math.min(1, start)) * (freqs.length - 1))
+          const endIdx = Math.floor(Math.max(0, Math.min(1, end)) * (freqs.length - 1))
+          const centerIdx = Math.floor((startIdx + endIdx) / 2)
+          const target = freqs[Math.max(0, Math.min(freqs.length - 1, centerIdx))]
+          lastRetuneRef.current = now
+          const autoBandwidth = getDefaultBandwidthForMode(currentMode)
+          onTuneToFrequency(target, autoBandwidth)
+          // Recenter view around 0.5 to keep span after retune
+          const newStart = Math.max(0, 0.5 - range / 2)
+          const newEnd = Math.min(1, 0.5 + range / 2)
+          setViewRange({ start: newStart, end: newEnd })
+        }
+      })
     }
-    const onUp = () => { setPanning(false); setDragStart(null); setDragEnd(null) }
+    const onUp = () => {
+      if (rafId) cancelAnimationFrame(rafId)
+      setPanning(false)
+      setDragStart(null)
+      setDragEnd(null)
+    }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp, { once: true })
-    return () => { window.removeEventListener('mousemove', onMove) }
-  }, [panning, dragStart, viewRange])
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId)
+      window.removeEventListener('mousemove', onMove)
+    }
+  }, [panning, dragStart, viewRange, spectrumData, onTuneToFrequency, currentMode])
 
   const spectrumRafRef = useRef(0)
   const fpsRef = useRef({ last: (typeof performance !== 'undefined' ? performance.now() : Date.now()), frames: 0, fps: 0 })
@@ -737,7 +837,8 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       for (let i = 0; i < length; i++) {
         const x = PLOT_LEFT + (i / (length - 1)) * plotW
         const normalizedPower = (slice[i] - minPower) / powerRange
-        const y = height - (normalizedPower * height * 0.9) - height * 0.05
+        // Increased headroom: 0.85 instead of 0.9, 0.10 instead of 0.05
+        const y = height - (normalizedPower * height * 0.85) - height * 0.10
 
         if (i === 0) {
           ctx.moveTo(x, y)
@@ -758,9 +859,9 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
         ctx.lineWidth = 1
         ctx.beginPath()
         for (let i = 0; i < length; i++) {
-          const x = (i / (length - 1)) * width
+          const x = PLOT_LEFT + (i / (length - 1)) * plotW
           const normalizedPower = (next[i] - minPower) / powerRange
-          const y = height - (normalizedPower * height * 0.9) - height * 0.05
+          const y = height - (normalizedPower * height * 0.85) - height * 0.10
           if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y)
         }
         ctx.stroke()
@@ -775,9 +876,9 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
         ctx.lineWidth = 1
         ctx.beginPath()
         for (let i = 0; i < length; i++) {
-          const x = (i / (length - 1)) * width
+          const x = PLOT_LEFT + (i / (length - 1)) * plotW
           const normalizedPower = (next[i] - minPower) / powerRange
-          const y = height - (normalizedPower * height * 0.9) - height * 0.05
+          const y = height - (normalizedPower * height * 0.85) - height * 0.10
           if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y)
         }
         ctx.stroke()
@@ -836,45 +937,93 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
         }
       }
 
-      // Draw detected signals
-      if (spectrumData.signals) {
-        const visMinF = frequencies[startIdx]
-        const visMaxF = frequencies[endIdx]
-        spectrumData.signals.forEach((signal) => {
-          if (signal.frequency < visMinF || signal.frequency > visMaxF) return
-          let signalIndex = startIdx
-          for (let i = startIdx + 1; i <= endIdx; i++) { if (frequencies[i] >= signal.frequency) { signalIndex = i; break } }
-          if (signalIndex !== -1) {
-            const x = PLOT_LEFT + ((signalIndex - startIdx) / (length - 1)) * plotW
-            const normalizedPower = ((signal.power ?? minPower) - minPower) / powerRange
-            const y = height - (normalizedPower * height * 0.9) - height * 0.05
-
-            // Draw signal marker
-            ctx.fillStyle = (signal.category && signal.category !== 'unknown') ? colorSignal.trim() : colorSignalUnknown.trim()
-            ctx.beginPath()
-            ctx.arc(x, y, 5, 0, 2 * Math.PI)
-            ctx.fill()
-            
-            // Draw border for clickability
-            ctx.strokeStyle = colorText.trim()
-            ctx.lineWidth = 1
-            ctx.stroke()
-
-            // Draw signal label
-            ctx.fillStyle = colorText.trim()
-            ctx.font = '11px Arial'
-            const label = `${(signal.frequency / 1e6).toFixed(3)} MHz`
-            ctx.fillText(label, x + 8, y - 8)
-            
-            // Show category if classified
-            if (signal.category && signal.category !== 'unknown') {
-              ctx.fillStyle = colorSignal.trim()
-              ctx.font = '9px Arial'
-              ctx.fillText(signal.description || signal.category, x + 8, y + 4)
-            }
-          }
-        })
+      // Draw persistent signals with stability and fade-out
+      const visMinF = frequencies[startIdx]
+      const visMaxF = frequencies[endIdx]
+      const now = Date.now()
+      const fadeTime = 10000 // 10 seconds
+      
+      // Check if viewRange changed significantly (update cache)
+      const viewRangeChanged = Math.abs(viewRange.start - lastViewRangeRef.current.start) > 0.05 ||
+                               Math.abs(viewRange.end - lastViewRangeRef.current.end) > 0.05
+      
+      if (viewRangeChanged) {
+        signalPositionsRef.current.clear()
+        lastViewRangeRef.current = { ...viewRange }
       }
+      
+      // Get signals to display: within view OR recently visible
+      const signalsToShow = Array.from(persistentSignals.values())
+        .filter(signal => {
+          const inView = signal.frequency >= visMinF && signal.frequency <= visMaxF
+          const recentlyVisible = (now - signal.lastSeen) < fadeTime
+          return inView || recentlyVisible
+        })
+        .sort((a, b) => (b.maxPower || -200) - (a.maxPower || -200))
+        .slice(0, 30) // Top 30
+      
+      signalsToShow.forEach((signal) => {
+        // Calculate or use cached position
+        let signalIndex = signalPositionsRef.current.get(signal.frequency)
+        
+        if (signalIndex === undefined || viewRangeChanged) {
+          // Find index for this frequency
+          if (signal.frequency >= visMinF && signal.frequency <= visMaxF) {
+            signalIndex = startIdx
+            for (let i = startIdx + 1; i <= endIdx; i++) {
+              if (frequencies[i] >= signal.frequency) {
+                signalIndex = i
+                break
+              }
+            }
+            signalPositionsRef.current.set(signal.frequency, signalIndex)
+          } else {
+            // Signal outside view but recently visible - estimate position
+            const freqRatio = (signal.frequency - visMinF) / (visMaxF - visMinF)
+            signalIndex = startIdx + Math.floor(freqRatio * (endIdx - startIdx))
+            signalPositionsRef.current.set(signal.frequency, signalIndex)
+          }
+        }
+        
+        if (signalIndex !== undefined && signalIndex >= startIdx && signalIndex <= endIdx) {
+          const x = PLOT_LEFT + ((signalIndex - startIdx) / (length - 1)) * plotW
+          const signalPower = signal.power ?? signal.maxPower ?? minPower
+          const normalizedPower = (signalPower - minPower) / powerRange
+          const y = height - (normalizedPower * height * 0.85) - height * 0.10
+
+          // Calculate opacity based on age (fade out over fadeTime)
+          const age = now - signal.lastSeen
+          const inView = signal.frequency >= visMinF && signal.frequency <= visMaxF
+          const opacity = inView ? 1.0 : Math.max(0.3, 1.0 - (age / fadeTime) * 0.7)
+
+          // Draw signal marker with opacity
+          ctx.globalAlpha = opacity
+          ctx.fillStyle = (signal.category && signal.category !== 'unknown') ? colorSignal.trim() : colorSignalUnknown.trim()
+          ctx.beginPath()
+          ctx.arc(x, y, 5, 0, 2 * Math.PI)
+          ctx.fill()
+          
+          // Draw border for clickability
+          ctx.strokeStyle = colorText.trim()
+          ctx.lineWidth = 1
+          ctx.stroke()
+
+          // Draw signal label
+          ctx.fillStyle = colorText.trim()
+          ctx.font = '11px Arial'
+          const label = `${(signal.frequency / 1e6).toFixed(3)} MHz`
+          ctx.fillText(label, x + 8, y - 8)
+          
+          // Show category if classified
+          if (signal.category && signal.category !== 'unknown') {
+            ctx.fillStyle = colorSignal.trim()
+            ctx.font = '9px Arial'
+            ctx.fillText(signal.description || signal.category, x + 8, y + 4)
+          }
+          
+          ctx.globalAlpha = 1.0 // Reset opacity
+        }
+      })
       
       // Draw frequency scale reflecting current zoom slice
       if (frequencies && frequencies.length > 0) {
@@ -900,7 +1049,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       const ticks = 8
       for (let i = 0; i < ticks; i++) {
         const tDb = maxPower - (i * (maxPower - minPower) / (ticks - 1))
-        const y = height - (((tDb - minPower) / (maxPower - minPower)) * height * 0.9) - height * 0.05
+        const y = height - (((tDb - minPower) / (maxPower - minPower)) * height * 0.85) - height * 0.10
         ctx.strokeStyle = colorGrid.trim()
         ctx.lineWidth = 1
         ctx.beginPath(); ctx.moveTo(PLOT_LEFT, y); ctx.lineTo(width, y); ctx.stroke()
