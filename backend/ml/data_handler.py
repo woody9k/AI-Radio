@@ -386,26 +386,52 @@ class DataCollector:
         samples_file = os.path.join(self.data_dir, "samples", "samples.json")
         if os.path.exists(samples_file):
             try:
+                # Check file size - skip if too large (>100MB) to avoid freezing
+                file_size = os.path.getsize(samples_file)
+                max_size = 100 * 1024 * 1024  # 100MB
+                if file_size > max_size:
+                    logger.warning(
+                        f"Samples file too large ({file_size / 1024 / 1024:.1f}MB), "
+                        f"skipping load to prevent freeze. Consider archiving old samples."
+                    )
+                    # Rename the file to archive it
+                    archive_name = f"{samples_file}.archive_{int(time.time())}"
+                    os.rename(samples_file, archive_name)
+                    logger.info(f"Archived large samples file to {archive_name}")
+                    return
+
                 with open(samples_file) as f:
                     data = json.load(f)
 
-                for sample_data in data.get("samples", []):
-                    sample = SignalSample(
-                        timestamp=sample_data["timestamp"],
-                        frequency=sample_data["frequency"],
-                        sample_rate=sample_data["sample_rate"],
-                        gain=sample_data["gain"],
-                        samples=np.array(sample_data["samples"]),
-                        spectrum=np.array(sample_data["spectrum"]),
-                        features=sample_data["features"],
-                        signals_detected=sample_data.get("signals_detected", []),
-                        label=sample_data.get("label"),
-                        confidence=sample_data.get("confidence"),
-                    )
-                    self.samples_buffer.append(sample)
+                loaded_count = 0
+                max_samples_to_load = 1000  # Limit to prevent memory issues
+                for sample_data in data.get("samples", [])[:max_samples_to_load]:
+                    try:
+                        sample = SignalSample(
+                            timestamp=sample_data["timestamp"],
+                            frequency=sample_data["frequency"],
+                            sample_rate=sample_data["sample_rate"],
+                            gain=sample_data["gain"],
+                            samples=np.array(sample_data["samples"]),
+                            spectrum=np.array(sample_data["spectrum"]),
+                            features=sample_data["features"],
+                            signals_detected=sample_data.get("signals_detected", []),
+                            label=sample_data.get("label"),
+                            confidence=sample_data.get("confidence"),
+                        )
+                        self.samples_buffer.append(sample)
+                        loaded_count += 1
+                    except Exception as sample_error:
+                        logger.warning(f"Error loading sample: {sample_error}, skipping")
 
-                logger.info(f"Loaded {len(self.samples_buffer)} existing samples")
+                logger.info(f"Loaded {loaded_count} existing samples")
 
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON decode error loading samples: {e}. File may be corrupted.")
+                # Rename corrupted file
+                corrupted_name = f"{samples_file}.corrupted_{int(time.time())}"
+                os.rename(samples_file, corrupted_name)
+                logger.info(f"Renamed corrupted file to {corrupted_name}")
             except Exception as e:
                 logger.error(f"Error loading existing samples: {e}")
 
