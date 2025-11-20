@@ -857,6 +857,234 @@ def stop_audio():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/recording/start", methods=["POST"])
+def start_recording():
+    """Start recording IQ samples."""
+    global current_device
+    if not current_device or not current_device.is_connected:
+        return jsonify({"success": False, "error": "No device connected"}), 400
+
+    try:
+        data = request.get_json() or {}
+        description = data.get("description")
+        mode = data.get("mode", "FM")
+
+        result = recording_manager.start_recording(
+            frequency=current_device.frequency,
+            sample_rate=current_device.sample_rate,
+            gain=str(current_device.gain),
+            mode=mode,
+            description=description,
+        )
+
+        if result.get("success"):
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+    except Exception as e:
+        logger.error(f"Error starting recording: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/recording/stop", methods=["POST"])
+def stop_recording():
+    """Stop recording and save metadata."""
+    try:
+        result = recording_manager.stop_recording()
+        if result.get("success"):
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+    except Exception as e:
+        logger.error(f"Error stopping recording: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/recording/status", methods=["GET"])
+def get_recording_status():
+    """Get current recording status."""
+    try:
+        status = recording_manager.get_recording_status()
+        return jsonify({"success": True, **status})
+    except Exception as e:
+        logger.error(f"Error getting recording status: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/recording/list", methods=["GET"])
+def list_recordings():
+    """List all recordings."""
+    try:
+        recordings = recording_manager.list_recordings()
+        return jsonify({"success": True, "recordings": recordings})
+    except Exception as e:
+        logger.error(f"Error listing recordings: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/recording/<filename>", methods=["GET"])
+def get_recording(filename):
+    """Get metadata for a specific recording."""
+    try:
+        recording = recording_manager.get_recording(filename)
+        if recording:
+            return jsonify({"success": True, "recording": recording})
+        else:
+            return jsonify({"success": False, "error": "Recording not found"}), 404
+    except Exception as e:
+        logger.error(f"Error getting recording: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/recording/<filename>/download", methods=["GET"])
+def download_recording(filename):
+    """Download a recording file."""
+    try:
+        filepath = recording_manager.get_recording_filepath(filename)
+        if filepath and filepath.exists():
+            return send_file(
+                str(filepath),
+                mimetype="application/octet-stream",
+                as_attachment=True,
+                download_name=filename,
+            )
+        else:
+            return jsonify({"success": False, "error": "Recording not found"}), 404
+    except Exception as e:
+        logger.error(f"Error downloading recording: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/signals", methods=["GET"])
+def get_signals():
+    """Get signals from database with filtering."""
+    try:
+        freq_min = request.args.get("freq_min", type=float)
+        freq_max = request.args.get("freq_max", type=float)
+        category = request.args.get("category")
+        limit = request.args.get("limit", type=int, default=100)
+
+        with get_db_session() as session:
+            query = session.query(Signal)
+
+            if freq_min:
+                query = query.filter(Signal.frequency >= freq_min)
+            if freq_max:
+                query = query.filter(Signal.frequency <= freq_max)
+            if category:
+                query = query.filter(Signal.category == category)
+
+            query = query.order_by(Signal.timestamp.desc()).limit(limit)
+            signals = query.all()
+
+            return jsonify({
+                "success": True,
+                "signals": [s.to_dict() for s in signals]
+            })
+    except Exception as e:
+        logger.error(f"Error getting signals: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/signals/search", methods=["GET"])
+def search_signals():
+    """Search signals by description or category."""
+    try:
+        q = request.args.get("q", "")
+        if not q:
+            return jsonify({"success": False, "error": "Query parameter 'q' required"}), 400
+
+        with get_db_session() as session:
+            query = session.query(Signal).filter(
+                (Signal.description.contains(q)) | (Signal.category.contains(q))
+            ).order_by(Signal.timestamp.desc()).limit(50)
+
+            signals = query.all()
+            return jsonify({
+                "success": True,
+                "signals": [s.to_dict() for s in signals]
+            })
+    except Exception as e:
+        logger.error(f"Error searching signals: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/signals/stats", methods=["GET"])
+def get_signal_stats():
+    """Get signal statistics."""
+    try:
+        with get_db_session() as session:
+            total = session.query(Signal).count()
+            categories = session.query(Signal.category).distinct().all()
+            categories = [c[0] for c in categories if c[0]]
+
+            return jsonify({
+                "success": True,
+                "total_signals": total,
+                "categories": categories
+            })
+    except Exception as e:
+        logger.error(f"Error getting signal stats: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/scan/status", methods=["GET"])
+def get_scan_status():
+    """Get current scan status."""
+    try:
+        # TODO: Implement when advanced scanner is integrated
+        return jsonify({
+            "success": True,
+            "is_scanning": False,
+            "progress": None
+        })
+    except Exception as e:
+        logger.error(f"Error getting scan status: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/scan/history", methods=["GET"])
+def get_scan_history():
+    """Get scan history."""
+    try:
+        limit = request.args.get("limit", type=int, default=20)
+        # TODO: Implement when advanced scanner is integrated
+        return jsonify({
+            "success": True,
+            "scans": []
+        })
+    except Exception as e:
+        logger.error(f"Error getting scan history: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/scan/advanced", methods=["POST"])
+def start_advanced_scan():
+    """Start an advanced multi-band scan."""
+    try:
+        data = request.get_json() or {}
+        bands = data.get("bands", [])
+        # TODO: Implement when advanced scanner is integrated
+        return jsonify({
+            "success": False,
+            "error": "Advanced scanning not yet implemented"
+        }), 501
+    except Exception as e:
+        logger.error(f"Error starting scan: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/scan/stop", methods=["POST"])
+def stop_scan():
+    """Stop current scan."""
+    try:
+        # TODO: Implement when advanced scanner is integrated
+        return jsonify({"success": True})
+    except Exception as e:
+        logger.error(f"Error stopping scan: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/tune_signal", methods=["POST"])
 def tune_signal():
     """Smart tuning: tune to a signal and start audio with appropriate settings."""

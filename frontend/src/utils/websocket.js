@@ -2,6 +2,8 @@
  * WebSocket connection manager with exponential backoff reconnection
  */
 
+import { io } from 'socket.io-client'
+
 export class WebSocketManager {
   constructor(url, options = {}) {
     this.url = url
@@ -27,7 +29,6 @@ export class WebSocketManager {
     }
 
     try {
-      const { io } = require('socket.io-client')
       this.socket = io(this.url, {
         reconnection: false, // We handle reconnection manually
         transports: ['websocket', 'polling']

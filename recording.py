@@ -279,6 +279,21 @@ class RecordingManager:
             logger.error(f"Error reading recording: {e}")
             return None
 
+    def get_recording_filepath(self, filename: str) -> Path | None:
+        """
+        Get filepath for a recording.
+
+        Args:
+            filename: Recording filename
+
+        Returns:
+            Path to recording file or None
+        """
+        filepath = self.recordings_dir / filename
+        if filepath.exists():
+            return filepath
+        return None
+
     def get_recording_status(self) -> dict[str, Any]:
         """
         Get current recording status.
