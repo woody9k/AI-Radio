@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 ### Added
+- **Testing Infrastructure**: Comprehensive test suite with pytest, unit tests for SignalProcessor and SDRDevice, integration tests for API endpoints
+- **Error Handling**: Retry decorators with exponential backoff, circuit breakers for fault tolerance
+- **Signal Recording**: IQ sample recording with metadata storage, playback, and export capabilities
+- **Signal Database**: SQLite database for persistent signal storage with search and filtering
+- **ML Training Pipeline**: Trainable classification models with preprocessing and evaluation
+- **Advanced Scanning**: Multi-band scanning with progress tracking, cancellation, and scheduled scans
+- **Mobile Support**: Touch gestures (pinch zoom, pan, tap) and responsive design improvements
+- **WebSocket Resilience**: Improved reconnection handling with exponential backoff
 - OpenAI integration (AI commands, settings)
 - FM/NOAA scanners
 - Chat and Settings UI
@@ -11,6 +19,9 @@
 - **CSS Grid layout**: Responsive 3-column grid replacing fixed flexbox layout
 
 ### Changed
+- **SDR Interface**: Enhanced with retry logic for all device operations (connect, set_frequency, read_samples, etc.)
+- **Signal Classifier**: Integrated ML models with automatic fallback to rule-based classification
+- **WebSocket Manager**: Replaced direct socket.io usage with WebSocketManager class for better connection handling
 - Bind frontend to 0.0.0.0; PYTHONPATH for backend
 - **Layout**: Converted to CSS Grid with sticky header/nav for better stability
 - **Frequency controls**: Moved from left panel to Spectrum display header

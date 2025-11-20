@@ -13,11 +13,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
   const [panning, setPanning] = useState(false)
   // Zoom and dBFS range controls
   const [zoomLevel, setZoomLevel] = useState(0) // 0..1 (0 = full span)
-  const [dbfsBottom, setDbfsBottom] = useState(-120) // bottom when autoscale disabled
   // Spectrum scaling/smoothing
-  const [autoScale, setAutoScale] = useState(true)
-  const [userMinDb, setUserMinDb] = useState(-120)
-  const [userMaxDb, setUserMaxDb] = useState(0)
   const [smoothEnabled, setSmoothEnabled] = useState(false)
   const [smoothAlpha, setSmoothAlpha] = useState(0.5)
   const [avgEnabled, setAvgEnabled] = useState(false)
@@ -42,6 +38,10 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
   const [waterfallAutoGain, setWaterfallAutoGain] = useState(false)
   const waterfallFrameRef = useRef(0)
   const [zoomData, setZoomData] = useState(null) // high-res spectrum slice
+  // Touch gesture state
+  const [touchStart, setTouchStart] = useState(null)
+  const [touchDistance, setTouchDistance] = useState(0)
+  const [lastTouchDistance, setLastTouchDistance] = useState(0)
 
   useEffect(() => {
     const updateDimensions = () => {
@@ -117,7 +117,9 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       const key = 'spectrumScale.v1'
       const payload = { rangeDb, offsetDb: Math.min(20, offsetDb), scaleMode }
       localStorage.setItem(key, JSON.stringify(payload))
-    } catch (_) {}
+    } catch {
+      // Ignore localStorage errors
+    }
   }, [rangeDb, offsetDb, scaleMode])
 
   useEffect(() => {
@@ -130,7 +132,9 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
         if (typeof obj.offsetDb === 'number') setOffsetDb(obj.offsetDb)
         if (typeof obj.scaleMode === 'string') setScaleMode(obj.scaleMode)
       }
-    } catch (_) {}
+    } catch {
+      // Ignore localStorage errors
+    }
   }, [])
 
   // Fetch high-res zoom data when span < threshold
@@ -339,6 +343,108 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
     }
   }
 
+  // Touch gesture handlers
+  const getTouchDistance = (touches) => {
+    if (touches.length < 2) return 0
+    const dx = touches[0].clientX - touches[1].clientX
+    const dy = touches[0].clientY - touches[1].clientY
+    return Math.sqrt(dx * dx + dy * dy)
+  }
+
+  const handleTouchStart = (e) => {
+    if (!canvasRef.current || !spectrumData) return
+    
+    const touches = Array.from(e.touches)
+    if (touches.length === 1) {
+      // Single touch - treat as mouse down
+      const touch = touches[0]
+      const rect = canvasRef.current.getBoundingClientRect()
+      const x = touch.clientX - rect.left
+      const y = touch.clientY - rect.top
+      setTouchStart({ x, y, time: Date.now() })
+      setDragStart({ x, y })
+      setIsDragging(true)
+    } else if (touches.length === 2) {
+      // Two touches - pinch zoom
+      const distance = getTouchDistance(touches)
+      setTouchDistance(distance)
+      setLastTouchDistance(distance)
+      setTouchStart(null)
+    }
+  }
+
+  const handleTouchMove = (e) => {
+    if (!canvasRef.current || !spectrumData) return
+    e.preventDefault()
+    
+    const touches = Array.from(e.touches)
+    if (touches.length === 1 && touchStart) {
+      // Single touch drag
+      const touch = touches[0]
+      const rect = canvasRef.current.getBoundingClientRect()
+      const x = touch.clientX - rect.left
+      const y = touch.clientY - rect.top
+      setDragEnd({ x, y })
+    } else if (touches.length === 2) {
+      // Pinch zoom
+      const distance = getTouchDistance(touches)
+      if (lastTouchDistance > 0) {
+        const scale = distance / lastTouchDistance
+        const range = viewRange.end - viewRange.start
+        const newRange = Math.min(1, Math.max(0.001, range / scale))
+        const center = viewRange.start + range / 2
+        let start = center - newRange / 2
+        let end = start + newRange
+        if (start < 0) { end -= start; start = 0 }
+        if (end > 1) { const over = end - 1; start -= over; end = 1; if (start < 0) start = 0 }
+        setViewRange({ start, end })
+      }
+      setLastTouchDistance(distance)
+    }
+  }
+
+  const handleTouchEnd = (e) => {
+    if (!canvasRef.current || !spectrumData) return
+    
+    const touches = Array.from(e.touches)
+    if (touches.length === 0) {
+      // All touches ended
+      if (touchStart && dragStart && dragEnd) {
+        const timeDiff = Date.now() - touchStart.time
+        const rect = canvasRef.current.getBoundingClientRect()
+        const dx = Math.abs((dragEnd.x || dragStart.x) - dragStart.x)
+        const dy = Math.abs((dragEnd.y || dragStart.y) - dragStart.y)
+        
+        // If it was a quick tap (not a drag)
+        if (timeDiff < 300 && dx < 10 && dy < 10) {
+          // Treat as tap to tune
+          const x = dragStart.x
+          const freqs = spectrumData.absolute_frequencies || spectrumData.frequencies
+          if (freqs && freqs.length > 0) {
+            const startIdx = Math.floor(viewRange.start * (freqs.length - 1))
+            const endIdx = Math.floor(viewRange.end * (freqs.length - 1))
+            const rel = Math.min(1, Math.max(0, (x - 60) / Math.max(1, rect.width - 60)))
+            const idx = startIdx + Math.floor(rel * Math.max(1, endIdx - startIdx))
+            const target = freqs[Math.max(startIdx, Math.min(endIdx, idx))]
+            if (onTuneToFrequency && typeof target === 'number') {
+              onTuneToFrequency(target)
+            }
+          }
+        } else {
+          // It was a drag - handle like mouse drag
+          handleMouseUp({ clientX: dragEnd.x + rect.left, clientY: dragEnd.y + rect.top })
+        }
+      }
+      
+      setTouchStart(null)
+      setTouchDistance(0)
+      setLastTouchDistance(0)
+      setDragStart(null)
+      setDragEnd(null)
+      setIsDragging(false)
+    }
+  }
+
   // click handling occurs via mouse events above
 
   // Prevent context menu on right-drag pan
@@ -403,7 +509,6 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
     if (start < 0) { end -= start; start = 0 }
     if (end > 1) { const over = end - 1; start -= over; end = 1; if (start < 0) start = 0 }
     setViewRange({ start, end })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoomLevel])
 
   // Map viewRange width -> zoomLevel, so wheel/pan keeps slider in sync
@@ -413,7 +518,6 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
     const z = 1 - Math.log(frac / minFrac) / Math.log(1 / minFrac)
     const clamped = Math.max(0, Math.min(1, z))
     if (Math.abs(clamped - zoomLevel) > 0.002) setZoomLevel(clamped)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewRange])
 
   // Right/Shift drag pan
@@ -893,7 +997,9 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       ctx.fillStyle = '#ddd'
       ctx.font = '12px Arial'
       ctx.fillText(text, width - boxW - pad + 8, pad + 16)
-    } catch (_) {}
+    } catch {
+      // Ignore debug overlay errors
+    }
 
     }
 
@@ -909,7 +1015,7 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
       draw()
     })
     return () => cancelAnimationFrame(spectrumRafRef.current)
-  }, [spectrumData, dimensions, mousePos, dragStart, dragEnd, isDragging, viewRange, autoScale, userMinDb, userMaxDb, smoothEnabled, smoothAlpha])
+  }, [spectrumData, dimensions, mousePos, dragStart, dragEnd, isDragging, viewRange, smoothEnabled, smoothAlpha])
 
   useEffect(() => {
     if (!waterfallData || !waterfallRef.current) return
@@ -1018,11 +1124,14 @@ const SpectrumDisplay = ({ spectrumData, waterfallData, streaming, onTuneToFrequ
               ref={canvasRef}
               width={dimensions.width}
               height={dimensions.height}
-              style={{ border: '1px solid #333', borderRadius: '4px', cursor: 'crosshair' }}
+              style={{ border: '1px solid #333', borderRadius: '4px', cursor: 'crosshair', touchAction: 'none' }}
               onMouseMove={handleMouseMove}
               onMouseDown={handleMouseDown}
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseLeave}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
             />
           </div>
           {/* Right-side vertical controls (Zoom, Range, Offset, Modes) */}

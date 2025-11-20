@@ -188,18 +188,116 @@ html {
 @media (max-width: 768px) {
   .app-content {
     grid-template-columns: 1fr;
+    grid-template-rows: auto auto 1fr;
   }
   
-  .left-panel,
-  .right-panel {
+  .left-panel {
     width: 100%;
     height: auto;
-    max-height: 200px;
+    max-height: none;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    order: 1;
   }
   
   .main-content {
     flex: 1;
     min-height: 400px;
+    order: 2;
+  }
+  
+  .right-panel {
+    width: 100%;
+    height: auto;
+    max-height: 300px;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    order: 3;
+  }
+
+  /* Touch-friendly button sizes */
+  .btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 10px 16px;
+    font-size: 14px;
+  }
+
+  /* Stack top navigation on mobile */
+  .top-nav {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .top-nav button {
+    min-height: 44px;
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+
+  /* Adjust header for mobile */
+  .app-header {
+    padding: 0.75rem 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .app-header h1 {
+    font-size: 1.25rem;
+  }
+
+  /* Make inputs touch-friendly */
+  input[type="text"],
+  input[type="number"],
+  input[type="range"],
+  select {
+    min-height: 44px;
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+
+  /* Improve spectrum display on mobile */
+  .spectrum-display {
+    padding: 8px;
+  }
+
+  .display-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Collapsible panels */
+  .left-panel > *,
+  .right-panel > * {
+    margin-bottom: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-header {
+    padding: 0.5rem;
+  }
+
+  .app-header h1 {
+    font-size: 1rem;
+  }
+
+  .connection-status {
+    font-size: 0.75rem;
+  }
+
+  .top-nav {
+    padding: 4px;
+  }
+
+  .top-nav button {
+    font-size: 12px;
+    padding: 6px 8px;
+  }
+
+  /* Stack digit groups on very small screens */
+  .digit-strip {
+    flex-wrap: wrap;
+    justify-content: center;
   }
 }
 

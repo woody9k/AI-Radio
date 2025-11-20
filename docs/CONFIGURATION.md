@@ -13,6 +13,28 @@
 - Frontend binds to `0.0.0.0` in dev for LAN access.
 - Backend listens on `0.0.0.0:5000` in debug (Flask dev server).
 
+## Database Configuration
+- SQLite database location: `instance/ai_radio.db`
+- Database is automatically created on first startup
+- Tables: `signals`, `classifications`, `recordings`
+- Access via SQLAlchemy ORM models in `backend/database/models.py`
+
+## Recording Configuration
+- Recording directory: `data/recordings/` (auto-created)
+- Recordings stored as binary IQ files (complex64 format)
+- Metadata stored in database and JSON files
+
+## ML Model Configuration
+- Model directory: `ml-models/` (auto-created)
+- Models stored as `.pkl` files (scikit-learn format)
+- Feature scaler: `ml-models/feature_scaler.pkl`
+- Model metadata: `ml-models/signal_classifier_model_metadata.json`
+
+## Error Handling
+- Retry logic: 3 attempts with exponential backoff (default)
+- Circuit breaker: Opens after 3 failures, recovers after 5 seconds
+- WebSocket reconnection: 5 attempts with exponential backoff (1-5 seconds)
+
 ## Platform Notes
 - Linux recommended for RTL-SDR.
 - For WSL2: use `usbipd wsl attach --busid <BUSID>`.

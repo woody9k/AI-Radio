@@ -14,13 +14,21 @@ User → Frontend (React) → REST/WS → Backend (Flask/Socket.IO) → SDR → 
 ```
 
 ## Key Modules
-- `backend/sdr_interface.py`: device control
+- `backend/sdr_interface.py`: device control with retry logic
 - `backend/signal_processor.py`: FFT, detection, features
-- `backend/ml/*`: data collection, rule-based classification
+- `backend/ml/*`: data collection, rule-based classification, ML training pipeline
+- `backend/ml/trainer.py`: ML model training and inference
+- `backend/ml/preprocessing.py`: Feature extraction and preprocessing
 - `backend/ai/*`: OpenAI parsing, intent routing
 - `backend/radio/*`: band scanners (FM/NOAA)
+- `backend/scanning/advanced_scanner.py`: Multi-band scanning with progress tracking
+- `backend/recording.py`: IQ sample recording and playback manager
+- `backend/database/*`: SQLAlchemy models and database utilities for signal storage
+- `backend/utils/error_handler.py`: Retry decorators and circuit breakers
+- `backend/tests/*`: Comprehensive test suite with pytest
 - `frontend/src/App.css`: CSS Grid layout, sticky header/nav, responsive breakpoints
-- `frontend/src/components/SpectrumDisplay.jsx`: Spectrum/waterfall with absolute frequency axis, SDR#‑style zoom/range sliders, passband overlay, average/peak traces, and high‑res zoom integration
+- `frontend/src/components/SpectrumDisplay.jsx`: Spectrum/waterfall with absolute frequency axis, SDR#‑style zoom/range sliders, passband overlay, average/peak traces, high‑res zoom, and touch gestures
+- `frontend/src/utils/websocket.js`: WebSocket manager with exponential backoff reconnection
 ## Spectrum Pipeline Details
 - Backend computes FFT (`signal_processor.compute_fft`) and now includes absolute frequencies, `center_frequency`, `sample_rate`, and `resolution_hz` in both REST and WebSocket payloads.
 - High‑res zoom endpoint `/api/spectrum/zoom` performs decimation and a larger FFT (e.g., 8192) around the current center for spans < ~100 kHz.

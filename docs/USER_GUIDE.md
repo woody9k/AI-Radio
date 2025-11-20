@@ -40,9 +40,42 @@
 - Auto‑Gain toggle and a Rate control (Every frame, 1/2, 1/3, 1/5) to adjust update rate
 - Presets panel for common bands (displayed below S-Meter in main column).
 
+### Signal Recording
+- Start/stop recording from the Recording Panel (below Presets)
+- Recordings are saved as IQ files with metadata (frequency, sample rate, duration, etc.)
+- List, download, and delete recordings from the panel
+- Recordings are stored in `data/recordings/`
+
+### Signal Database
+- All detected signals are automatically stored in the database
+- Access the Signal Database from the Analysis tab
+- Search signals by description or category
+- Filter by frequency range and category
+- View statistics about stored signals
+
+### ML Model Training
+- Collect labeled data during normal operation
+- Train models via API: `POST /api/ml/train`
+- Trained models improve classification accuracy
+- Models automatically fall back to rule-based classification if unavailable
+
+### Advanced Scanning
+- Access from the Analysis tab
+- Configure multiple frequency bands to scan
+- Set step size, dwell time, and threshold for each band
+- View real-time progress and results
+- Scan history is automatically saved
+
+### Mobile Usage
+- Touch gestures: pinch to zoom, pan to navigate, tap to tune
+- Responsive layout adapts to screen size
+- Touch-friendly controls (minimum 44x44px targets)
+- Optimized for tablets and phones
+
 ## Testing
 - `./test_rtlsdr.sh --clean` to free device and run `rtl_test -t`.
 - `./test_ai.sh` to check AI endpoint reachability.
+- Run `pytest` from project root to execute test suite.
 
 ## Stop
 - `./stop.sh` to stop backend and frontend.

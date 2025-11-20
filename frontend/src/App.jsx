@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { io } from 'socket.io-client'
 import Controls from './components/Controls'
 import SpectrumDisplay from './components/SpectrumDisplay'
 import DeviceStatus from './components/DeviceStatus'
@@ -8,8 +7,12 @@ import ChatPanel from './components/ChatPanel'
 import SettingsPage from './components/SettingsPage'
 import Presets from './components/Presets'
 import SMeter from './components/SMeter'
+import RecordingPanel from './components/RecordingPanel'
+import SignalDatabase from './components/SignalDatabase'
+import AdvancedScanner from './components/AdvancedScanner'
 import './App.css'
 import { getAISettings } from './api/aiClient'
+import { WebSocketManager } from './utils/websocket'
 
 function App() {
   const [connected, setConnected] = useState(false)
@@ -26,26 +29,38 @@ function App() {
 
   useEffect(() => {
     // Prevent Chrome scroll restoration from landing content under sticky header
-    try { window.scrollTo(0, 0) } catch (_) {}
+    try {
+      window.scrollTo(0, 0)
+    } catch {
+      // Ignore scroll errors
+    }
 
-    // Initialize WebSocket connection
-    const newSocket = io('http://localhost:5000')
+    // Initialize WebSocket connection with exponential backoff
+    const wsManager = new WebSocketManager('http://localhost:5000', {
+      reconnect: true,
+      maxReconnectAttempts: Infinity,
+      initialReconnectDelay: 1000,
+      maxReconnectDelay: 30000,
+      reconnectBackoff: 2.0
+    })
     
-    newSocket.on('connect', () => {
+    wsManager.on('connect', () => {
       console.log('Connected to server')
       setConnected(true)
     })
 
-    newSocket.on('disconnect', () => {
+    wsManager.on('disconnect', () => {
       console.log('Disconnected from server')
       setConnected(false)
-    })
-    newSocket.io.on('reconnect', () => {
-      console.log('Reconnected to server')
-      setConnected(true)
+      setDeviceConnected(false)
+      setStreaming(false)
     })
 
-    newSocket.on('spectrum_data', (data) => {
+    wsManager.on('error', (error) => {
+      console.error('WebSocket error:', error)
+    })
+
+    wsManager.on('spectrum_data', (data) => {
       setSpectrumData(data)
       
       // Process AI detections from spectrum data
@@ -63,28 +78,20 @@ function App() {
       }
     })
 
-    newSocket.on('waterfall_data', (data) => {
+    wsManager.on('waterfall_data', (data) => {
       setWaterfallData(data)
     })
 
-    newSocket.on('status', (data) => {
+    wsManager.on('status', (data) => {
       console.log('Status:', data.message)
     })
 
-    newSocket.on('device_error', (data) => {
+    wsManager.on('device_error', (data) => {
       console.error('Device error:', data.error)
       setDeviceConnected(false)
       setStreaming(false)
       alert(`Device error: ${data.error}. Please reconnect the device.`)
     })
-
-    // Consolidated disconnect above; keep device state updates here
-    newSocket.on('disconnect', () => {
-      setDeviceConnected(false)
-      setStreaming(false)
-    })
-
-    // no-op: we don't persist the socket in state
 
     // Health check every 5 seconds to detect backend restart (debounced)
     const healthCheckInterval = setInterval(async () => {
@@ -112,7 +119,7 @@ function App() {
     }, 5000)
 
     return () => {
-      newSocket.close()
+      wsManager.disconnect()
       clearInterval(healthCheckInterval)
     }
   }, [])
@@ -310,6 +317,8 @@ function App() {
               viewMode={viewMode}
               onListenToSignal={listenToSignal}
             />
+            <AdvancedScanner />
+            <SignalDatabase />
           </div>
         )}
         {activePane === 'settings' && (
@@ -355,6 +364,14 @@ function App() {
             <Presets
               deviceConnected={deviceConnected}
               onApplyPreset={updateSettings}
+            />
+          </div>
+
+          {/* Recording Panel */}
+          <div style={{ padding: 12 }}>
+            <RecordingPanel
+              deviceConnected={deviceConnected}
+              deviceInfo={deviceInfo}
             />
           </div>
         </div>

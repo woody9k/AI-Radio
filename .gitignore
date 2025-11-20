@@ -41,6 +41,8 @@ frontend/build/
 # Data and Models
 data/*.iq
 data/*.wav
+data/recordings/*.iq
+data/recordings/*.json
 ml-models/*.h5
 ml-models/*.pkl
 
@@ -62,3 +64,10 @@ Thumbs.db
 
 
 backend_output.log
+
+# Test outputs
+htmlcov/
+.coverage
+.pytest_cache/
+*.db
+test_*.db

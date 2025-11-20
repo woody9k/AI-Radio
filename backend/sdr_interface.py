@@ -20,6 +20,8 @@ except ImportError:
     RtlSdr = None
     logging.warning("pyrtlsdr not installed. SDR functionality will be limited.")
 
+from backend.utils.error_handler import retry, safe_execute
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,8 +52,9 @@ class SDRDevice:
         # Callbacks
         self.data_callback: Callable[[np.ndarray], None] | None = None
 
+    @retry(max_attempts=3, delay=0.5, backoff=2.0, exceptions=(Exception,))
     def connect(self) -> bool:
-        """Connect to the RTL-SDR device."""
+        """Connect to the RTL-SDR device with retry logic."""
         if RtlSdr is None:
             logger.error("pyrtlsdr library not available")
             return False
@@ -75,7 +78,7 @@ class SDRDevice:
         except Exception as e:
             logger.error(f"Failed to connect to RTL-SDR device {self.device_index}: {e}")
             self.is_connected = False
-            return False
+            raise  # Re-raise for retry decorator
 
     def disconnect(self):
         """Disconnect from the RTL-SDR device."""
@@ -96,8 +99,9 @@ class SDRDevice:
         self.is_streaming = False
         logger.info("Disconnected from RTL-SDR device")
 
+    @retry(max_attempts=2, delay=0.1, backoff=1.5, exceptions=(Exception,))
     def set_frequency(self, frequency: float) -> bool:
-        """Set the center frequency in Hz."""
+        """Set the center frequency in Hz with retry logic."""
         if not self.is_connected or not self.sdr:
             logger.warning("Device not connected")
             return False
@@ -109,7 +113,7 @@ class SDRDevice:
             return True
         except Exception as e:
             logger.error(f"Failed to set frequency: {e}")
-            return False
+            raise  # Re-raise for retry decorator
 
     def set_gain(self, gain) -> bool:
         """Set the gain. Can be 'auto', a number, or a string like 'auto'."""
@@ -126,8 +130,9 @@ class SDRDevice:
             logger.error(f"Failed to set gain: {e}")
             return False
 
+    @retry(max_attempts=2, delay=0.1, backoff=1.5, exceptions=(Exception,))
     def set_sample_rate(self, sample_rate: float) -> bool:
-        """Set the sample rate in Hz."""
+        """Set the sample rate in Hz with retry logic."""
         if not self.is_connected or not self.sdr:
             logger.warning("Device not connected")
             return False
@@ -139,7 +144,7 @@ class SDRDevice:
             return True
         except Exception as e:
             logger.error(f"Failed to set sample rate: {e}")
-            return False
+            raise  # Re-raise for retry decorator
 
     def set_bandwidth(self, bandwidth: float) -> bool:
         """Set the bandwidth in Hz."""
@@ -231,8 +236,9 @@ class SDRDevice:
         except Exception as e:
             logger.debug(f"Could not determine device capabilities: {e}")
 
+    @retry(max_attempts=2, delay=0.05, backoff=1.5, exceptions=(Exception,))
     def read_samples(self, num_samples: int) -> np.ndarray | None:
-        """Read a single batch of samples."""
+        """Read a single batch of samples with retry logic."""
         if not self.is_connected or not self.sdr:
             logger.warning("Device not connected")
             return None
@@ -242,7 +248,7 @@ class SDRDevice:
             return samples
         except Exception as e:
             logger.error(f"Failed to read samples: {e}")
-            return None
+            raise  # Re-raise for retry decorator
 
     def start_streaming(self, num_samples: int = 1024, callback: Callable | None = None):
         """Start continuous sample streaming in a separate thread."""

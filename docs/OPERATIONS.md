@@ -33,6 +33,31 @@
 - See `TROUBLESHOOTING.md` in the repo root.
 - Free RTL-SDR: `./quick_kill_rtlsdr.sh` or `./kill_rtlsdr_processes.sh`.
 
+## Database
+- SQLite database stored in `instance/ai_radio.db`
+- Contains signals, classifications, and recording metadata
+- Database is automatically initialized on startup
+- Access via API endpoints: `/api/signals`, `/api/classifications`, etc.
+
+## Recordings
+- Recordings stored in `data/recordings/` as IQ files
+- Metadata includes frequency, sample rate, gain, duration, file size
+- List recordings: `GET /api/recording/list`
+- Download recordings: `GET /api/recording/<filename>/download`
+
+## ML Models
+- Trained models stored in `ml-models/` directory
+- Models are automatically loaded on startup if available
+- Train new models: `POST /api/ml/train`
+- Models fall back to rule-based classification if unavailable
+
+## Testing
+- Run test suite: `pytest` from project root
+- Test coverage: `pytest --cov=backend`
+- Tests located in `backend/tests/`
+- Mock SDR device available for testing without hardware
+
 ## Scripts
 - Device test: `./test_rtlsdr.sh --clean`
 - AI endpoint test: `./test_ai.sh`
+- Run tests: `pytest` or `python -m pytest`

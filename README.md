@@ -15,11 +15,16 @@ A modern web-based interface for RTL-SDR devices with AI-powered anomaly detecti
 - **Smart Scanning**: AI-guided frequency scanning based on learned patterns
 - **User-Friendly Interface**: Simple presets for beginners, advanced controls for hobbyists
 - **SDR#-Style Controls**: Left panel split into Radio and Device sections (Mode, Bandwidth, AGC, Squelch, Bias‑T when available)
-- **Signal Recording**: Capture and replay interesting signals
- - **Passband Overlay**: Visual passband with draggable edges to adjust bandwidth
- - **Average/Peak Traces**: Optional moving average and peak‑hold overlays
- - **Waterfall Controls**: Auto‑gain and frame rate controls
- - **Debug Overlay**: Shows SR, FFT size, Hz/bin, and FPS
+- **Signal Recording**: Capture IQ samples to files with metadata, playback, and export
+- **Signal Database**: Persistent storage of detected signals with search and filtering
+- **ML Model Training**: Train classification models from collected data
+- **Advanced Scanning**: Multi-band scanning with progress tracking and scheduled scans
+- **Mobile Support**: Touch gestures (pinch zoom, pan, tap) and responsive layout
+- **Error Resilience**: Automatic retry logic and circuit breakers for device operations
+- **Passband Overlay**: Visual passband with draggable edges to adjust bandwidth
+- **Average/Peak Traces**: Optional moving average and peak‑hold overlays
+- **Waterfall Controls**: Auto‑gain and frame rate controls
+- **Debug Overlay**: Shows SR, FFT size, Hz/bin, and FPS
 
 ## Quick Start
 
@@ -94,36 +99,42 @@ This script will automatically install:
 ```
 AI-Radio/
 ├── backend/           # Python Flask backend
+│   ├── tests/        # Test suite (pytest)
+│   ├── database/     # SQLAlchemy models and DB utilities
+│   ├── ml/           # ML training and classification
+│   ├── scanning/     # Advanced scanning utilities
+│   ├── utils/        # Error handling and utilities
+│   └── ...
 ├── frontend/          # React frontend
-├── ml-models/         # Saved TensorFlow models
-├── data/              # Training data & logs
+│   └── src/
+│       ├── components/  # React components
+│       └── utils/      # WebSocket manager and utilities
+├── ml-models/         # Saved ML models (.pkl files)
+├── data/              # Training data, logs, recordings, database
+│   └── recordings/   # IQ sample recordings
 └── docs/              # Documentation
 ```
 
 ## Current Status
 
 ### ✅ **Completed Features**
-- **RTL-SDR Interface**: Device detection, connection, and control
+- **RTL-SDR Interface**: Device detection, connection, and control with retry logic
 - **Signal Processing**: Real-time FFT, spectrum analysis, peak detection
 - **Web Interface**: Modern React frontend with real-time visualizations
 - **Preset System**: 10+ built-in presets for common radio applications (now displayed below the S‑Meter)
 - **Data Collection**: Automatic ML training data gathering
 - **REST API**: Complete backend API with WebSocket streaming
 - **Real-time Visualization**: Spectrum plots and waterfall display
- - **AI Chat**: Right-side assistant for intent parsing and command execution
- - **Interactive Spectrum**: Click-to-tune and drag-to-select bandwidth
- - **S‑Meter Improvements**: Windowed, noise‑robust S‑unit calculation around tuned frequency
-
-### 🔄 **In Progress**
-- AI anomaly detection models
-- Signal classification system
-- Smart scanning engine
-
-### 📋 **Planned Features**
-- Advanced recording and export capabilities
-- Signal database and history
-- Interactive tutorials and help system
-- Mobile-responsive design improvements
+- **AI Chat**: Right-side assistant for intent parsing and command execution
+- **Interactive Spectrum**: Click-to-tune and drag-to-select bandwidth
+- **S‑Meter Improvements**: Windowed, noise‑robust S‑unit calculation around tuned frequency
+- **Signal Recording**: IQ sample recording with metadata storage and playback
+- **Signal Database**: SQLite database for signal history, search, and analysis
+- **ML Training Pipeline**: Trainable models for signal classification with fallback to rule-based
+- **Advanced Scanning**: Multi-band scanning with progress tracking and cancellation
+- **Mobile Support**: Responsive design with touch gestures (pinch zoom, pan, tap)
+- **Error Handling**: Retry logic, circuit breakers, and improved WebSocket reconnection
+- **Testing Infrastructure**: Comprehensive test suite with pytest
 
 ## Development
 

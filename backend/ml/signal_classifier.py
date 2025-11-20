@@ -7,6 +7,7 @@ Focuses on user-friendly service categories with technical details as metadata.
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -108,6 +109,40 @@ class SignalClassifier:
         self.classification_history = []
         self.max_history = 1000
 
+        # ML model support
+        self.ml_model = None
+        self.ml_preprocessor = None
+        self.use_ml = False
+
+    def load_ml_model(self, model_path: str | None = None):
+        """
+        Load ML model for classification.
+
+        Args:
+            model_path: Path to model file (None = use default)
+        """
+        try:
+            from backend.ml.trainer import model_trainer
+
+            if model_path:
+                model_trainer.load_model(model_path)
+            else:
+                # Try to find latest model
+                models_dir = Path("ml-models")
+                model_files = list(models_dir.glob("*.pkl"))
+                if model_files:
+                    latest = max(model_files, key=lambda p: p.stat().st_mtime)
+                    model_trainer.load_model(str(latest))
+
+            self.ml_model = model_trainer.model
+            self.ml_preprocessor = model_trainer.preprocessor
+            self.use_ml = True
+            logger.info("ML model loaded for signal classification")
+
+        except Exception as e:
+            logger.warning(f"Could not load ML model: {e}. Using rule-based classification.")
+            self.use_ml = False
+
     def classify_signal(
         self,
         frequency: float,
@@ -127,24 +162,43 @@ class SignalClassifier:
         Returns:
             ClassificationResult with category, confidence, and metadata
         """
-        # Start with frequency-based classification
+        # Try ML classification first if available
+        ml_category = None
+        ml_confidence = 0.0
+        if self.use_ml and self.ml_model and self.ml_preprocessor:
+            try:
+                from backend.ml.trainer import model_trainer
+                ml_category, ml_confidence = model_trainer.predict(features)
+                logger.debug(f"ML prediction: {ml_category} (confidence: {ml_confidence:.2f})")
+            except Exception as e:
+                logger.warning(f"ML prediction failed: {e}. Falling back to rule-based.")
+
+        # Start with frequency-based classification (fallback or enhancement)
         freq_based_category = self._classify_by_frequency(frequency)
 
-        # Enhance with feature-based analysis
-        feature_confidence = self._analyze_features(features, freq_based_category)
+        # Use ML result if confidence is high enough, otherwise use rule-based
+        if ml_category and ml_confidence > 0.7:
+            final_category = ml_category
+            total_confidence = ml_confidence
+        else:
+            final_category = freq_based_category
+            # Enhance with feature-based analysis
+            feature_confidence = self._analyze_features(features, freq_based_category)
 
-        # Use signal characteristics if available
-        signal_confidence = 1.0
-        if signal_info:
-            signal_confidence = self._analyze_signal_characteristics(
-                signal_info, freq_based_category
-            )
+            # Use signal characteristics if available
+            signal_confidence = 1.0
+            if signal_info:
+                signal_confidence = self._analyze_signal_characteristics(
+                    signal_info, freq_based_category
+                )
 
-        # Combine confidences
-        total_confidence = (feature_confidence + signal_confidence) / 2.0
+            # Combine confidences
+            total_confidence = (feature_confidence + signal_confidence) / 2.0
 
         # Get category info
-        category_info = self.signal_categories[freq_based_category]
+        category_info = self.signal_categories.get(
+            final_category, self.signal_categories.get("unknown", {})
+        )
 
         # Create technical details
         technical_details = {
@@ -160,13 +214,13 @@ class SignalClassifier:
         }
 
         # Store classification for learning
-        self._store_classification(frequency, freq_based_category, total_confidence, features)
+        self._store_classification(frequency, final_category, total_confidence, features)
 
         return ClassificationResult(
-            category=freq_based_category,
+            category=final_category,
             confidence=total_confidence,
-            modulation=category_info["modulation"],
-            description=category_info["description"],
+            modulation=category_info.get("modulation", "Unknown"),
+            description=category_info.get("description", "Unknown Signal"),
             technical_details=technical_details,
         )
 

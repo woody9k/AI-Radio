@@ -15,7 +15,7 @@ from datetime import datetime
 
 import numpy as np
 from audio_demodulator import AudioDemodulator
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_file
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from ml.data_handler import data_collector
@@ -25,7 +25,13 @@ from sdr_interface import SDRDevice, sdr_manager
 from signal_processor import SignalProcessor, WaterfallProcessor
 
 # AI modules are imported lazily inside the handler to avoid hard dependency at startup
+from backend.database.db import get_db_session, init_database
+from backend.database.models import Classification, Recording, Signal
 from backend.settings import get_settings, update_settings
+from recording import recording_manager
+
+# Initialize database
+init_database()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -569,16 +575,18 @@ def get_spectrum_zoom():
         freqs_abs = (freqs_rel + center).tolist()
         resolution_hz = sr_decim / fft_size
 
-        return jsonify({
-            "success": True,
-            "center_frequency": center,
-            "sample_rate": sr_decim,
-            "resolution_hz": resolution_hz,
-            "frequencies": freqs_rel.tolist(),
-            "absolute_frequencies": freqs_abs,
-            "spectrum": spectrum.tolist(),
-            "timestamp": datetime.now().isoformat(),
-        })
+        return jsonify(
+            {
+                "success": True,
+                "center_frequency": center,
+                "sample_rate": sr_decim,
+                "resolution_hz": resolution_hz,
+                "frequencies": freqs_rel.tolist(),
+                "absolute_frequencies": freqs_abs,
+                "spectrum": spectrum.tolist(),
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
     except Exception as e:
         logger.error(f"Error getting zoom spectrum: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
@@ -921,6 +929,84 @@ def label_signal():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/ml/train", methods=["POST"])
+def train_model():
+    """Train ML model from collected data."""
+    try:
+        from backend.ml.trainer import model_trainer
+
+        data = request.get_json() or {}
+        test_size = float(data.get("test_size", 0.2))
+        n_estimators = int(data.get("n_estimators", 100))
+
+        metrics = model_trainer.train_model(test_size=test_size, n_estimators=n_estimators)
+        model_path = model_trainer.save_model()
+
+        return jsonify(
+            {
+                "success": True,
+                "metrics": metrics,
+                "model_path": model_path,
+            }
+        )
+
+    except ValueError as e:
+        logger.error(f"Training error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error training model: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/ml/models", methods=["GET"])
+def list_models():
+    """List available trained models."""
+    try:
+        from backend.ml.trainer import model_trainer
+
+        models = []
+        for model_file in model_trainer.models_dir.glob("*.pkl"):
+            metadata_file = model_file.with_name(model_file.stem + "_metadata.json")
+            metadata = {}
+            if metadata_file.exists():
+                import json
+
+                with open(metadata_file, "r") as f:
+                    metadata = json.load(f)
+
+            models.append(
+                {
+                    "filename": model_file.name,
+                    "path": str(model_file),
+                    "metadata": metadata,
+                }
+            )
+
+        return jsonify({"success": True, "models": models})
+
+    except Exception as e:
+        logger.error(f"Error listing models: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/ml/models/<model_name>/load", methods=["POST"])
+def load_model(model_name: str):
+    """Load a trained model."""
+    try:
+        from backend.ml.trainer import model_trainer
+
+        model_path = model_trainer.models_dir / model_name
+        if not model_path.exists():
+            return jsonify({"success": False, "error": "Model not found"}), 404
+
+        model_trainer.load_model(str(model_path))
+        return jsonify({"success": True, "message": f"Loaded model: {model_name}"})
+
+    except Exception as e:
+        logger.error(f"Error loading model: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # WebSocket Events
 @socketio.on("connect")
 def handle_connect():
@@ -1026,6 +1112,41 @@ def _process_stream_iteration() -> bool:
             sig["modulation"] = classification.modulation
             sig["description"] = classification.description
             sig["technical_details"] = classification.technical_details
+
+            # Store in database
+            try:
+                with get_db_session() as session:
+                    signal_record = Signal(
+                        frequency=sig["frequency"],
+                        power=sig.get("power"),
+                        bandwidth=sig.get("bandwidth"),
+                        snr=sig.get("snr"),
+                        timestamp=datetime.now().isoformat(),
+                        category=classification.category,
+                        modulation=classification.modulation,
+                        confidence=classification.confidence,
+                        description=classification.description,
+                        technical_details=classification.technical_details,
+                        sample_rate=current_device.sample_rate,
+                        gain=current_device.gain,
+                    )
+                    session.add(signal_record)
+                    signal_id = signal_record.id
+
+                    classification_record = Classification(
+                        signal_id=signal_id,
+                        frequency=sig["frequency"],
+                        category=classification.category,
+                        confidence=classification.confidence,
+                        modulation=classification.modulation,
+                        timestamp=datetime.now().isoformat(),
+                        features=features,
+                        method="ml" if signal_classifier.use_ml else "rule_based",
+                    )
+                    session.add(classification_record)
+            except Exception as db_error:
+                logger.warning(f"Error storing signal in database: {db_error}")
+
         except Exception as e:
             logger.error(f"Error classifying signal: {e}")
             sig["category"] = "unknown"
@@ -1033,6 +1154,13 @@ def _process_stream_iteration() -> bool:
             sig["modulation"] = "Unknown"
             sig["description"] = "Unknown Signal"
             sig["technical_details"] = {}
+
+    # Write samples to recording if active
+    if recording_manager.is_recording:
+        try:
+            recording_manager.write_samples(samples)
+        except Exception as e:
+            logger.error(f"Error writing to recording: {e}")
 
     if np.random.rand() < 0.1:
         try:
